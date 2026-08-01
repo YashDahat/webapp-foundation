@@ -1,64 +1,56 @@
+// GENERATED foundation scaffold — do not edit (pipeline overwrites this per business).
+// Self-contained auth context: reads token from localStorage, decodes JWT claims,
+// calls /api/v1/auth/login directly — no dependency on generated service/types files.
 import React, { createContext, useState, useContext, ReactNode } from 'react';
-import { AuthRequest, AuthResponse } from '@/types/auth';
-import { login as authServiceLogin } from '@/services/authService';
+import apiClient from '@/api/client';
+
+interface AuthUser { username: string; role: string }
 
 interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  user: { username: string; role: string } | null;
-  login: (credentials: AuthRequest) => Promise<void>;
+  user: AuthUser | null;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const decodeJwt = (token: string) => {
+const decodeJwt = (token: string): Record<string, unknown> | null => {
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(function (c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        })
-        .join(''),
-    );
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error('Failed to decode JWT:', error);
-    return null;
-  }
+    const payload = token.split('.')[1];
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch { return null; }
+};
+
+const userFromToken = (token: string): AuthUser | null => {
+  const d = decodeJwt(token);
+  if (!d) return null;
+  const sub = (d['sub'] ?? d['username'] ?? d['email'] ?? '') as string;
+  const role = (d['role'] ?? d['authorities'] ?? 'USER') as string;
+  return sub ? { username: sub, role } : null;
 };
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [user, setUser] = useState<{ username: string; role: string } | null>(() => {
-    const storedToken = localStorage.getItem('token');
-    if (storedToken) {
-      const decoded = decodeJwt(storedToken);
-      if (decoded && decoded.sub && decoded.role) {
-        return { username: decoded.sub, role: decoded.role };
-      }
-    }
-    return null;
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('token'));
+  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    const t = localStorage.getItem('token');
+    return t ? userFromToken(t) : null;
   });
 
-  const login = async (credentials: AuthRequest) => {
+  const login = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      const response: AuthResponse = await authServiceLogin(credentials);
-      if (response.token) {
-        localStorage.setItem('token', response.token);
-        setToken(response.token);
+      const res = await apiClient.post<{ token: string }>('/api/v1/auth/login', { username, password });
+      const jwt = res.data.token;
+      if (jwt) {
+        localStorage.setItem('token', jwt);
+        setToken(jwt);
         setIsAuthenticated(true);
-        const decoded = decodeJwt(response.token);
-        if (decoded && decoded.sub && decoded.role) {
-          setUser({ username: decoded.sub, role: decoded.role });
-        }
+        setUser(userFromToken(jwt));
       }
     } finally {
       setIsLoading(false);
@@ -80,9 +72,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 };

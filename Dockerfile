@@ -1,7 +1,8 @@
 FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install
+# npm ci is faster + reproducible from package-lock.json; --prefer-offline uses cached layers
+RUN npm ci --prefer-offline || npm install
 COPY frontend/ .
 RUN npm run build
 
@@ -9,7 +10,9 @@ FROM maven:3.9-eclipse-temurin-17 AS backend-build
 WORKDIR /app
 COPY backend/ .
 COPY --from=frontend-build /app/frontend/dist ./src/main/resources/static
-RUN mvn package -q -DskipTests
+RUN mvn package -q -DskipTests \
+        -Dmaven.wagon.http.retryHandler.count=3 \
+        --no-transfer-progress
 
 FROM eclipse-temurin:17-jre-jammy
 RUN groupadd -r app && useradd -r -g app app

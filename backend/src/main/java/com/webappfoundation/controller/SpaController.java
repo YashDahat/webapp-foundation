@@ -11,7 +11,7 @@ public class SpaController {
     // load/refresh. The "/**/{path}" variant covers nested routes. The [^\.] guard
     // keeps real static assets (*.js, *.css, *.webp) served by the resource handler,
     // and explicit @*Mapping controllers still win over this wildcard (so /api/** is unaffected).
-    @GetMapping(value = {"/", "/{path:[^\.]*}", "/**/{path:[^\.]*}"})
+    @GetMapping(value = {"/", "/{path:[^\\.]*}", "/**/{path:[^\\.]*}"})
     public String forward() {
         return "forward:/index.html";
     }
