@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/context/AuthContext'
 import { CartProvider } from '@/cart/CartContext'
@@ -23,7 +23,7 @@ export default function App() {
                 path="*"
                 element={
                   <SiteLayout config={siteConfig}>
-                    {/* Page routes are injected here by the pipeline */}
+                    <Outlet />
                   </SiteLayout>
                 }
               />
