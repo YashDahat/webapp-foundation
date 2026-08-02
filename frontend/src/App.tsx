@@ -1,25 +1,36 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AuthProvider } from '@/context/AuthContext'
 import { CartProvider } from '@/cart/CartContext'
+import { SiteLayout } from '@/shell'
+import siteConfig from '@/config/siteConfig'
 
 const queryClient = new QueryClient()
 
+// Public and admin routes are injected here by the pipeline.
+// Public pages are wrapped in SiteLayout (Header + Footer from foundation).
+// Admin pages use their own AdminLayout — do not wrap them in SiteLayout.
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <CartProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="*" element={
-              <div style={{ fontFamily: 'sans-serif', padding: '2rem', textAlign: 'center' }}>
-                <h1>WebApp Foundation</h1>
-                <p>Foundation scaffold is running. Business-specific pages are generated on top.</p>
-                <p><a href="/api/actuator/health">Health check</a></p>
-              </div>
-            } />
-          </Routes>
-        </BrowserRouter>
-      </CartProvider>
+      <AuthProvider>
+        <CartProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Admin routes rendered with their own AdminLayout — no SiteLayout */}
+              {/* Public routes rendered inside SiteLayout shell */}
+              <Route
+                path="*"
+                element={
+                  <SiteLayout config={siteConfig}>
+                    {/* Page routes are injected here by the pipeline */}
+                  </SiteLayout>
+                }
+              />
+            </Routes>
+          </BrowserRouter>
+        </CartProvider>
+      </AuthProvider>
     </QueryClientProvider>
   )
 }
