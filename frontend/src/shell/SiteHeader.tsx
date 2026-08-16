@@ -106,14 +106,24 @@ export default function SiteHeader({
                 Logout
               </Button>
             ) : (
-              <Link to="/login">
-                <Button
-                  variant="ghost"
-                  className={`${textClass} ${hoverClass} transition-colors duration-200`}
-                >
-                  Login
-                </Button>
-              </Link>
+              <>
+                <Link to="/login">
+                  <Button
+                    variant="ghost"
+                    className={`${textClass} ${hoverClass} transition-colors duration-200`}
+                  >
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/signup">
+                  <Button
+                    variant="ghost"
+                    className={`${textClass} ${hoverClass} border border-current transition-colors duration-200`}
+                  >
+                    Sign up
+                  </Button>
+                </Link>
+              </>
             )
           )}
         </div>
@@ -174,9 +184,14 @@ export default function SiteHeader({
                   Logout
                 </Button>
               ) : (
-                <Link to="/login" onClick={close}>
-                  <Button variant="ghost" className={`${textClass} ${hoverClass}`}>Login</Button>
-                </Link>
+                <>
+                  <Link to="/login" onClick={close}>
+                    <Button variant="ghost" className={`${textClass} ${hoverClass}`}>Login</Button>
+                  </Link>
+                  <Link to="/signup" onClick={close}>
+                    <Button variant="ghost" className={`${textClass} ${hoverClass} border border-current`}>Sign up</Button>
+                  </Link>
+                </>
               )
             )}
           </div>
