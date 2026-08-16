@@ -1,8 +1,9 @@
 // GENERATED foundation scaffold — do not edit (pipeline overwrites this per business).
-// Self-contained auth context: reads token from localStorage, decodes JWT claims,
-// calls /api/v1/auth/login directly — no dependency on generated service/types files.
+// Auth context: owns token persistence + JWT-derived user state. The HTTP login call
+// lives in services/authService (foundation-owned, cloned verbatim); this delegates to it
+// and stores the JWT. UI must log in via useAuth().login — not authService.login directly.
 import React, { createContext, useState, useContext, ReactNode } from 'react';
-import apiClient from '@/api/client';
+import * as authApi from '@/services/authService';
 
 interface AuthUser { username: string; role: string }
 
@@ -44,8 +45,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      const res = await apiClient.post<{ token: string }>('/api/v1/auth/login', { username, password });
-      const jwt = res.data.token;
+      const { token: jwt } = await authApi.login({ username, password });
       if (jwt) {
         localStorage.setItem('token', jwt);
         setToken(jwt);
