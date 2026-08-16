@@ -40,7 +40,18 @@ class JwtUtil {
   Date    extractExpiration(String token);
   boolean validateToken(String token, UserDetails userDetails);
 }
+
+// @CurrentUser — resolves to the authenticated user's EMAIL (login identity = JWT subject), or
+// null for a guest. This is the ONLY way a controller learns "who is the current user".
+@interface CurrentUser {}   // usage: (@CurrentUser String email)
 ```
+
+**Identity / cross-reference convention (IMPORTANT):**
+- A domain controller obtains the current user with `@CurrentUser String email` — never read the
+  principal by hand, never `UUID.fromString(...)`, never a hardcoded id.
+- A domain model references the user by **`String userEmail`** (the email handle) — **never `User.id`
+  (Integer) and never a UUID**. Set it from `@CurrentUser`; for a guest it may be null (guest checkout).
+- For "the current user's own rows", filter your repository by `userEmail` — do not expose an id path param.
 
 Auth endpoints (already implemented — do not rebuild), both public and both return `AuthResponse { String token }`:
 `POST /api/v1/auth/login`     ·  body `AuthRequest { String username; String password }` — **username = email OR phone** (India-first).
