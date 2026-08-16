@@ -25,7 +25,12 @@ public class JwtUtil {
     private long expirationMs;
 
     public String generateToken(UserDetails userDetails) {
-        return generateToken(new HashMap<>(), userDetails.getUsername());
+        // Carry the role as a claim so the frontend can gate UI (backend authz still
+        // re-loads authorities from the DB). Authority is the bare role name (no ROLE_ prefix).
+        Map<String, Object> claims = new HashMap<>();
+        userDetails.getAuthorities().stream().findFirst()
+                .ifPresent(authority -> claims.put("role", authority.getAuthority()));
+        return generateToken(claims, userDetails.getUsername());
     }
 
     public String generateToken(Map<String, Object> extraClaims, String subject) {

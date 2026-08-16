@@ -4,12 +4,16 @@ import { AuthProvider } from '@/context/AuthContext'
 import { CartProvider } from '@/cart/CartContext'
 import { SiteLayout } from '@/shell'
 import siteConfig from '@/config/siteConfig'
+import HomePage from '@/pages/HomePage'
+import LoginPage from '@/pages/LoginPage'
+import SignupPage from '@/pages/SignupPage'
 
 const queryClient = new QueryClient()
 
 // Public and admin routes are injected here by the pipeline.
 // Public pages are wrapped in SiteLayout (Header + Footer from foundation).
 // Admin pages use their own AdminLayout — do not wrap them in SiteLayout.
+// /login and /signup are foundation auth routes (always present).
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -17,16 +21,19 @@ export default function App() {
         <CartProvider>
           <BrowserRouter>
             <Routes>
-              {/* Admin routes rendered with their own AdminLayout — no SiteLayout */}
               {/* Public routes rendered inside SiteLayout shell */}
               <Route
-                path="*"
                 element={
                   <SiteLayout config={siteConfig}>
                     <Outlet />
                   </SiteLayout>
                 }
-              />
+              >
+                <Route path="/" element={<HomePage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/signup" element={<SignupPage />} />
+                <Route path="*" element={<HomePage />} />
+              </Route>
             </Routes>
           </BrowserRouter>
         </CartProvider>
