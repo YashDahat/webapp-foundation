@@ -51,17 +51,22 @@ public class AuthController {
 
     /**
      * Self-service signup. Always creates a USER (admin stays seed-only), then auto-logs the
-     * new user in by returning a JWT — same token shape as /login. Rejects duplicate emails.
+     * new user in by returning a JWT — same token shape as /login. Email and phone are both
+     * required and unique; either can be used to log in afterward. Rejects duplicate email/phone.
      */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already registered");
         }
+        if (userRepository.findByPhone(request.getPhone()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number already registered");
+        }
         final User user = userRepository.save(User.builder()
                 .firstName(request.getFirstName())
                 .lastName(request.getLastName())
                 .email(request.getEmail())
+                .phone(request.getPhone())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.USER)
                 .build());

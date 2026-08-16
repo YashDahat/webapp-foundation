@@ -25,7 +25,14 @@ public class User implements UserDetails {
     private Integer id;
     private String firstName;
     private String lastName;
+
+    @Column(nullable = false, unique = true)
     private String email;
+
+    // Primary contact + alternate login identity (India-first: phone over email). Required + unique.
+    @Column(nullable = false, unique = true)
+    private String phone;
+
     private String password;
 
     @Enumerated(EnumType.STRING)

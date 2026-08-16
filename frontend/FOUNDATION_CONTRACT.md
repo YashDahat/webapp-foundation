@@ -14,23 +14,23 @@ useAuth(): {
   isAuthenticated: boolean;
   isLoading: boolean;                                     // NOT `loading`
   user: AuthUser | null;                                  // guard for null
-  login: (username: string, password: string) => Promise<void>;   // TWO string args, not an object
+  login: (username: string, password: string) => Promise<void>;   // TWO string args; username = email OR phone
   register: (details: RegisterRequest) => Promise<void>;          // ONE object arg; creates a USER + auto-logs in
   logout: () => void;
 }
 
 type AuthUser = { username: string; role: string };       // role is "ADMIN" | "USER" (a string)
 // RegisterRequest is imported from '@/types/auth':
-type RegisterRequest = { firstName: string; lastName: string; email: string; password: string };
+type RegisterRequest = { firstName: string; lastName: string; email: string; phone: string; password: string };
 ```
 
 Gotchas (each was a real failure this run):
 - Use `isLoading`, **never** `loading`.
 - `user.role` is a **single string**, **not** `user.roles` (no array).
 - There is **no** `user.email` and **no** `user.name`; the only fields are `username` and `role`.
-- `login` takes `(username, password)` — call `login(values.username, values.password)`, not `login(values)`.
-- `register` takes a **single object** `{ firstName, lastName, email, password }` — NOT positional args. Signup always yields role `USER` and auto-logs in; do not build your own `/register` call.
-- Build the signup form/page yourself with `useAuth().register(...)`; there is no prebuilt signup UI.
+- `login` takes `(username, password)` — the first arg is the login identifier, **email OR phone**. Label the login field "Email or phone".
+- `register` takes a **single object** `{ firstName, lastName, email, phone, password }` — NOT positional args. `phone` is REQUIRED (India-first primary contact) and must be unique; email + phone are both unique. Signup always yields role `USER` and auto-logs in; do not build your own `/register` call.
+- Build the signup form/page yourself with `useAuth().register(...)`; there is no prebuilt signup UI. Include a required phone field.
 - `<AuthProvider>` is already mounted at the app root — do not add another.
 
 ## Cart — `@/cart` (also re-exported from `@/context/CartContext`)

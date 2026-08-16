@@ -10,25 +10,28 @@ resolution is automatic. Match every method signature and field exactly.
 ## Auth & users
 
 ```java
-// Entity — table "_user"; implements UserDetails. getUsername() returns email (login identity = email).
+// Entity — table "_user"; implements UserDetails. email AND phone are both required + unique.
+// getUsername() returns email (JWT subject), but login accepts email OR phone (see below).
 class User {
-  Integer id; String firstName; String lastName; String email; String password; Role role;
+  Integer id; String firstName; String lastName; String email; String phone; String password; Role role;
 }
 enum Role { ADMIN, USER }        // authority is the bare name ("ADMIN"), no ROLE_ prefix
 
 interface UserRepository extends JpaRepository<User, Integer> {
   Optional<User> findByEmail(String email);
+  Optional<User> findByPhone(String phone);
 }
 
 // UserService implements UserDetailsService — this is its ONLY public method.
+// The argument is the login identifier: email OR phone (resolved in that order).
 class UserService {
-  UserDetails loadUserByUsername(String email);
+  UserDetails loadUserByUsername(String emailOrPhone);
 }
 // Signup is already provided by the /register endpoint below (creates USER + auto-login) — use it,
 // don't build your own. For any other lookup, inject UserRepository directly; do not add methods to UserService.
 
-// Signup DTO (fenced).
-class RegisterRequest { String firstName; String lastName; String email; String password; }
+// Signup DTO (fenced). email + phone are both required and unique.
+class RegisterRequest { String firstName; String lastName; String email; String phone; String password; }
 
 class JwtUtil {
   String  generateToken(UserDetails userDetails);
@@ -40,8 +43,8 @@ class JwtUtil {
 ```
 
 Auth endpoints (already implemented — do not rebuild), both public and both return `AuthResponse { String token }`:
-`POST /api/v1/auth/login`     ·  body `AuthRequest { String username; String password }` (username = email)
-`POST /api/v1/auth/register`  ·  body `RegisterRequest { firstName; lastName; email; password }` → 201, always role USER, then auto-login (returns a JWT); 409 if the email already exists.
+`POST /api/v1/auth/login`     ·  body `AuthRequest { String username; String password }` — **username = email OR phone** (India-first).
+`POST /api/v1/auth/register`  ·  body `RegisterRequest { firstName; lastName; email; phone; password }` → 201, always role USER, then auto-login (returns a JWT); 409 if the email OR phone already exists.
 
 Beans available to inject anywhere: `PasswordEncoder`, `AuthenticationManager`, `AuthenticationProvider`.
 The single ADMIN user is seeded from the `admin.email` / `admin.password` properties.

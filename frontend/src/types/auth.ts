@@ -8,7 +8,8 @@
 /** Roles issued by the backend — com.webappfoundation.model.Role. */
 export type Role = 'ADMIN' | 'USER';
 
-/** Request body for POST /api/v1/auth/login — com.webappfoundation.dto.AuthRequest. */
+/** Request body for POST /api/v1/auth/login — com.webappfoundation.dto.AuthRequest.
+ *  `username` is the login identifier: email OR phone (India-first login). */
 export interface AuthRequest {
   username: string;
   password: string;
@@ -20,11 +21,13 @@ export interface AuthResponse {
 }
 
 /** Request body for POST /api/v1/auth/register — com.webappfoundation.dto.RegisterRequest.
- *  Self-service signup; the backend always assigns role USER. */
+ *  Self-service signup; the backend always assigns role USER. Email and phone are both
+ *  required and unique — either can be used to log in afterward. */
 export interface RegisterRequest {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string;
   password: string;
 }
 
@@ -38,5 +41,6 @@ export interface AuthenticatedUser {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string;
   role: Role;
 }

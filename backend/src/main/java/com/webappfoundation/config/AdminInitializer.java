@@ -22,6 +22,9 @@ public class AdminInitializer implements CommandLineRunner {
     @Value("${admin.email:owner@yourbusiness.com}")
     private String adminEmail;
 
+    @Value("${admin.phone:+910000000000}")
+    private String adminPhone;
+
     @Value("${admin.password:changeme123}")
     private String adminPassword;
 
@@ -37,6 +40,7 @@ public class AdminInitializer implements CommandLineRunner {
                     .firstName("Admin")
                     .lastName("User")
                     .email(adminEmail)
+                    .phone(adminPhone)
                     .password(passwordEncoder.encode(adminPassword))
                     .role(Role.ADMIN)
                     .build());
