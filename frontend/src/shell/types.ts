@@ -25,6 +25,8 @@ export interface SiteHeaderProps {
   ctaButton?: { label: string; href: string } | null;
   /** Show Login / Logout button. Default true. */
   showAuth?: boolean;
+  /** Show the cart button (icon + item-count badge, links to /cart). Default true. */
+  showCart?: boolean;
 
   // Design — supply Tailwind class strings; defaults to a dark theme
   /** Header background. e.g. 'bg-gray-900', 'bg-white', 'bg-amber-900' */

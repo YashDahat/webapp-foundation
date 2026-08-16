@@ -3,9 +3,10 @@
 // Business-specific values live in src/config/siteConfig.ts, which the LLM generates.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
+import { useCart } from '@/cart';
 import type { SiteHeaderProps } from './types';
 
 export default function SiteHeader({
@@ -14,6 +15,7 @@ export default function SiteHeader({
   navLinks,
   ctaButton,
   showAuth = true,
+  showCart = true,
   bgClass = 'bg-gray-900',
   textClass = 'text-white',
   hoverClass = 'hover:text-yellow-400',
@@ -21,8 +23,27 @@ export default function SiteHeader({
 }: SiteHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isAuthenticated, logout } = useAuth();
+  const { cartCount } = useCart();
   const navigate = useNavigate();
   const close = () => setMobileOpen(false);
+
+  // Globally-accessible cart button (icon + item-count badge) — rendered in the header, which
+  // appears on every public page via SiteLayout. Links to the public /cart view.
+  const cartButton = (
+    <Link to="/cart" onClick={close} aria-label="Cart" data-testid="cart-button">
+      <Button variant="ghost" size="icon" className={`relative ${textClass} ${hoverClass}`}>
+        <ShoppingCart size={20} />
+        {cartCount > 0 && (
+          <span
+            data-testid="cart-badge"
+            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-gray-900"
+          >
+            {cartCount}
+          </span>
+        )}
+      </Button>
+    </Link>
+  );
 
   const handleLogout = () => {
     logout();
@@ -74,6 +95,7 @@ export default function SiteHeader({
               </Button>
             </Link>
           )}
+          {showCart && cartButton}
           {showAuth && (
             isAuthenticated ? (
               <Button
@@ -96,17 +118,20 @@ export default function SiteHeader({
           )}
         </div>
 
-        {/* Mobile hamburger */}
-        <button
-          type="button"
-          onClick={() => setMobileOpen(o => !o)}
-          className={`md:hidden p-2 rounded-md transition-colors duration-200 ${hoverClass}`}
-          aria-label="Toggle navigation menu"
-          aria-expanded={mobileOpen}
-          data-testid="nav-mobile-toggle"
-        >
-          {mobileOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        {/* Mobile right actions: cart stays visible in the top bar; hamburger opens the menu */}
+        <div className="md:hidden flex items-center gap-1">
+          {showCart && cartButton}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(o => !o)}
+            className={`p-2 rounded-md transition-colors duration-200 ${hoverClass}`}
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobileOpen}
+            data-testid="nav-mobile-toggle"
+          >
+            {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile menu */}

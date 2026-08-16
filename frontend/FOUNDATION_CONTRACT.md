@@ -52,7 +52,11 @@ interface CartItem   { id: string | number; name: string; unitPrice: number; qua
                        imageUrl?: string | null; variantKey?: string; metadata?: Record<string, unknown> }
 interface CartTotals { subtotal: number; adjustments: { id: string; label: string; amount: number }[]; total: number }
 ```
-The cart is **headless** — build the cart UI (add-to-cart, quantity, cart view) yourself using `useCart()`.
+The cart is **headless** for product/add-to-cart UI — build add-to-cart buttons on your pages with `useCart()`.
+But the **cart entry point is PREBUILT and global**: the site header shows a cart button (icon + item-count
+badge, `SiteHeaderProps.showCart`, default true) that links to the prebuilt **`/cart`** page (`pages/CartPage.tsx`,
+public — a guest can view it). "Proceed to checkout" there goes to `/checkout` (RequireAuth-gated). Do NOT add
+your own header cart button or `/cart` page; do build the add-to-cart controls on product/menu pages.
 
 ## Checkout — `@/cart/useCheckout` (also re-exported from `@/context/CheckoutContext`)
 
@@ -88,6 +92,7 @@ interface NavLink         { label: string; href: string; external?: boolean }
 interface SocialLink      { platform: 'facebook'|'instagram'|'twitter'|'youtube'|'whatsapp'|'linkedin'; url: string }
 interface SiteHeaderProps { brandName: string; logoUrl?: string | null; navLinks: NavLink[];
                             ctaButton?: { label: string; href: string } | null; showAuth?: boolean;
+                            showCart?: boolean;  // cart icon + item-count badge, links to /cart; default true
                             bgClass?: string; textClass?: string; hoverClass?: string; ctaClass?: string }
 interface SiteFooterProps { brandName: string; tagline?: string | null; address?: string | null;
                             phone?: string | null; email?: string | null; openingHours?: string | null;
