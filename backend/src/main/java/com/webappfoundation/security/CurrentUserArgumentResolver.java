@@ -1,5 +1,6 @@
 package com.webappfoundation.security;
 
+import com.webappfoundation.model.User;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -11,10 +12,13 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
- * Resolves {@link CurrentUser}-annotated {@code String} parameters to the authenticated user's
- * email (the login identity = JWT subject), or {@code null} for a guest / anonymous request.
- * Registered in {@link com.webappfoundation.config.WebConfig}. Domain controllers use this instead
- * of touching the principal or inventing an id — the email is the cross-fence user handle.
+ * Resolves {@link CurrentUser}-annotated {@code Integer} parameters to the authenticated user's id
+ * ({@code User.id}), or {@code null} for a guest / anonymous request. The id comes for free from the
+ * principal — {@code JwtAuthFilter} already loads the full {@link User} into the security context — so
+ * there is no extra query. Registered in {@link com.webappfoundation.config.WebConfig}. Domain
+ * controllers use {@code @CurrentUser Integer userId} instead of touching the principal or inventing
+ * an id; every user-owned record links by {@code Integer userId}. (Email/phone are lookup keys on
+ * {@link com.webappfoundation.repository.UserRepository}, never stored as the domain reference.)
  */
 @Component
 public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolver {
@@ -22,7 +26,7 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentUser.class)
-                && String.class.isAssignableFrom(parameter.getParameterType());
+                && Integer.class.isAssignableFrom(parameter.getParameterType());
     }
 
     @Override
@@ -32,6 +36,7 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             return null; // guest / unauthenticated
         }
-        return auth.getName(); // JWT subject == User.getUsername() == email
+        Object principal = auth.getPrincipal();
+        return principal instanceof User user ? user.getId() : null;
     }
 }

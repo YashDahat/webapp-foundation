@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,6 +23,9 @@ type Values = z.infer<typeof schema>;
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/';
+  const signupHref = redirectTo === '/' ? '/signup' : `/signup?redirect=${encodeURIComponent(redirectTo)}`;
   const [formError, setFormError] = useState<string | null>(null);
 
   const form = useForm<Values>({
@@ -34,7 +37,7 @@ export default function LoginPage() {
     setFormError(null);
     try {
       await login(values.identifier, values.password);
-      navigate('/');
+      navigate(redirectTo, { replace: true }); // back to where the guest was (e.g. /checkout)
     } catch {
       setFormError('Invalid email/phone or password.');
     }
@@ -73,7 +76,7 @@ export default function LoginPage() {
         </CardContent>
         <CardFooter className="justify-center text-sm text-muted-foreground">
           New here?&nbsp;
-          <Link to="/signup" className="font-medium text-primary hover:underline" data-testid="link-signup">Create an account</Link>
+          <Link to={signupHref} className="font-medium text-primary hover:underline" data-testid="link-signup">Create an account</Link>
         </CardFooter>
       </Card>
     </div>

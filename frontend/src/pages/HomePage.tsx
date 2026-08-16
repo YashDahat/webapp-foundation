@@ -1,17 +1,19 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useCart } from '@/cart';
 import { Button } from '@/components/ui/button';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
 
-// Minimal foundation home page — exists mainly to make the auth flow visible/testable.
+// Minimal foundation home page — exists mainly to make the auth + guest-checkout flow visible/testable.
 // A generated business replaces this with its real landing page.
 export default function HomePage() {
   const { isAuthenticated, user, logout } = useAuth();
+  const { cartCount, addItem } = useCart();
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
+    <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
       {!isAuthenticated || !user ? (
         <Card data-testid="home-anon">
           <CardHeader>
@@ -44,6 +46,24 @@ export default function HomePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Cart demo — a guest can add items, then checkout requires login (cart is preserved). */}
+      <Card data-testid="cart-card">
+        <CardHeader>
+          <CardTitle>Your cart</CardTitle>
+          <CardDescription><span data-testid="cart-count">{cartCount}</span> item(s) in cart.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-3">
+          <Button
+            variant="outline"
+            data-testid="add-to-cart"
+            onClick={() => addItem({ id: 'demo-1', name: 'Sample item', unitPrice: 499 })}
+          >
+            Add sample item
+          </Button>
+          <Button asChild data-testid="go-checkout"><Link to="/checkout">Checkout</Link></Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

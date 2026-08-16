@@ -41,17 +41,21 @@ class JwtUtil {
   boolean validateToken(String token, UserDetails userDetails);
 }
 
-// @CurrentUser — resolves to the authenticated user's EMAIL (login identity = JWT subject), or
-// null for a guest. This is the ONLY way a controller learns "who is the current user".
-@interface CurrentUser {}   // usage: (@CurrentUser String email)
+// @CurrentUser — resolves to the authenticated user's id (User.id, Integer), or null for a guest.
+// This is the ONLY way a controller learns "who is the current user".
+@interface CurrentUser {}   // usage: (@CurrentUser Integer userId)
 ```
 
 **Identity / cross-reference convention (IMPORTANT):**
-- A domain controller obtains the current user with `@CurrentUser String email` — never read the
-  principal by hand, never `UUID.fromString(...)`, never a hardcoded id.
-- A domain model references the user by **`String userEmail`** (the email handle) — **never `User.id`
-  (Integer) and never a UUID**. Set it from `@CurrentUser`; for a guest it may be null (guest checkout).
-- For "the current user's own rows", filter your repository by `userEmail` — do not expose an id path param.
+- Every user-related record (order, payment, booking, …) links to the user by **`Integer userId`**
+  (= `User.id`, our logical unique key) — **never a UUID, never email/phone stored as the reference.**
+- A domain controller obtains it with `@CurrentUser Integer userId` — never read the principal by
+  hand, never `UUID.fromString(...)`, never a hardcoded id. For a guest it is null (but guest checkout
+  requires login first, so user-owned writes always have a real `userId`).
+- For "the current user's own rows", filter your repository by `userId`; do not expose an id path param.
+- Email/phone are the user's **login + lookup keys only** — when you genuinely need to find a user by
+  email or phone, use `UserRepository.findByEmail(...)` / `findByPhone(...)`; do not denormalize them
+  onto domain rows as the link.
 
 Auth endpoints (already implemented — do not rebuild), both public and both return `AuthResponse { String token }`:
 `POST /api/v1/auth/login`     ·  body `AuthRequest { String username; String password }` — **username = email OR phone** (India-first).

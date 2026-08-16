@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -26,6 +26,9 @@ type Values = z.infer<typeof schema>;
 export default function SignupPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/';
+  const loginHref = redirectTo === '/' ? '/login' : `/login?redirect=${encodeURIComponent(redirectTo)}`;
   const [formError, setFormError] = useState<string | null>(null);
 
   const form = useForm<Values>({
@@ -37,7 +40,7 @@ export default function SignupPage() {
     setFormError(null);
     try {
       await register(values); // auto-logs in on success
-      navigate('/');
+      navigate(redirectTo, { replace: true }); // back to where the guest was (e.g. /checkout)
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string; detail?: string } }; message?: string };
       setFormError(e.response?.data?.message ?? e.response?.data?.detail ?? 'Could not create your account. Please try again.');
@@ -100,7 +103,7 @@ export default function SignupPage() {
         </CardContent>
         <CardFooter className="justify-center text-sm text-muted-foreground">
           Already have an account?&nbsp;
-          <Link to="/login" className="font-medium text-primary hover:underline" data-testid="link-login">Log in</Link>
+          <Link to={loginHref} className="font-medium text-primary hover:underline" data-testid="link-login">Log in</Link>
         </CardFooter>
       </Card>
     </div>
