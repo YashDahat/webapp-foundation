@@ -30,7 +30,7 @@ Gotchas (each was a real failure this run):
 - There is **no** `user.email` and **no** `user.name`; the only fields are `username` and `role`.
 - `login` takes `(username, password)` — the first arg is the login identifier, **email OR phone**. Label the login field "Email or phone".
 - `register` takes a **single object** `{ firstName, lastName, email, phone, password }` — NOT positional args. `phone` is REQUIRED (India-first primary contact) and must be unique; email + phone are both unique. Signup always yields role `USER` and auto-logs in; do not build your own `/register` call.
-- Build the signup form/page yourself with `useAuth().register(...)`; there is no prebuilt signup UI. Include a required phone field.
+- **Login and Signup pages are PREBUILT** at `/login` and `/signup` (foundation-owned `pages/LoginPage.tsx` + `pages/SignupPage.tsx`, auto-routed by the route registry). Do NOT build your own — link to them (`ROUTES.LOGIN` / `ROUTES.SIGNUP`, or `/login` / `/signup`). The site header's `showAuth` already links to `/login`.
 - `<AuthProvider>` is already mounted at the app root — do not add another.
 
 ## Cart — `@/cart` (also re-exported from `@/context/CartContext`)
