@@ -108,6 +108,27 @@ You must generate `src/config/siteConfig.ts` with `export const siteConfig: Site
 import { cn } from '@/lib/utils';     // cn(...inputs: ClassValue[]): string — className merge helper
 ```
 
+## Gallery — `@/components/gallery/GallerySection`, `@/hooks/useGallery`
+
+A full image gallery ships PREBUILT (types, SDK, hook, public component, public `/gallery` page, and an
+admin manager at `/admin/gallery`). Do NOT rebuild it, re-declare its types, or build your own upload UI.
+
+```ts
+import GallerySection from '@/components/gallery/GallerySection';
+import { useGallery } from '@/hooks/useGallery';
+import type { GalleryItemDto, GallerySection as SectionType } from '@/types/gallery';
+
+<GallerySection section="WEBSITE" title="Gallery" />   // main site gallery grid
+<GallerySection section="EVENT" title="Events" />       // event photos, grouped by eventName
+useGallery(section?): { data: GalleryItemDto[] | undefined; isLoading; isError }
+
+type GalleryItemDto = { id: number; url: string; caption: string | null;
+                        section: 'WEBSITE'|'EVENT'; eventName: string | null;
+                        eventDate: string | null; sortOrder: number };   // url is ready to use in <img src>
+```
+To display images anywhere, drop in `<GallerySection>` (or read `useGallery()`); admins upload/manage at
+`/admin/gallery`. Uploads/edits/deletes go through `@/services/galleryService` (ADMIN only).
+
 ---
 
 ## Pinned-library gotchas

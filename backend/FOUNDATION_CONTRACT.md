@@ -99,6 +99,28 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 Endpoints (already implemented): `POST /api/v1/payments/create-order`, `/verify`, `/webhook`.
 `PaymentGateway` is the provider adapter — call payments through `PaymentService`, never the gateway directly.
 
+## Gallery + media (image storage)
+
+A full image gallery is already implemented and wired — admins upload/manage the website gallery
+section and event photos; the public site displays them. Bytes live in object storage (MinIO/S3 via
+`StorageService`); do NOT rebuild any of this and do NOT add your own upload/storage.
+
+```java
+class GalleryItem { Long id; String objectKey; String contentType; String caption;
+                    GallerySection section; String eventName; LocalDate eventDate;
+                    Integer sortOrder; Instant uploadedAt; }
+enum GallerySection { WEBSITE, EVENT }
+class GalleryItemDto { Long id; String url; String caption; GallerySection section;
+                       String eventName; LocalDate eventDate; Integer sortOrder; }   // url = /api/v1/media/<key>
+interface GalleryItemRepository extends JpaRepository<GalleryItem, Long> { ... }
+class GalleryService { ... }                       // orchestrates storage + repo
+interface StorageService { String store(MultipartFile file, String prefix); StoredObject load(String key); void delete(String key); }
+```
+
+Endpoints (already implemented): `GET /api/v1/gallery(?section=WEBSITE|EVENT)` (public),
+`GET /api/v1/media/{key}` (public, streams the image), and `POST/PUT/DELETE /api/v1/admin/gallery`
+(ADMIN — multipart upload / edit / delete).
+
 ## Shared exceptions
 
 ```java
@@ -113,4 +135,6 @@ class PaymentGatewayException extends RuntimeException { PaymentGatewayException
 
 **Do not** generate: `SecurityConfig`, `JwtAuthFilter`, `PasswordEncoder`, `AuthController`,
 `PaymentController`, `SpaController`, `User`, `Role`, `Payment`, `UserRepository`, `PaymentRepository`,
-or any auth/payment DTO listed above — they are all fenced and already wired.
+the gallery/media/storage spine (`GalleryItem`, `GallerySection`, `GalleryItemRepository`,
+`GalleryService`, `GalleryController`, `MediaController`, `AdminGalleryController`, `StorageService`,
+`MinioStorageService`, `S3Config`), or any auth/payment/gallery DTO listed above — all fenced and wired.

@@ -9,7 +9,11 @@ import LoginPage from '@/pages/LoginPage'
 import SignupPage from '@/pages/SignupPage'
 import CartPage from '@/pages/CartPage'
 import CheckoutPage from '@/pages/CheckoutPage'
+import GalleryPage from '@/pages/GalleryPage'
+import AdminGalleryPage from '@/pages/admin/AdminGalleryPage'
 import RequireAuth from '@/components/RequireAuth'
+import RequireAdmin from '@/components/RequireAdmin'
+import AdminLayout from '@/components/AdminLayout'
 
 const queryClient = new QueryClient()
 
@@ -36,8 +40,17 @@ export default function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
                 <Route path="/cart" element={<CartPage />} />
+                <Route path="/gallery" element={<GalleryPage />} />
                 <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
                 <Route path="*" element={<HomePage />} />
+              </Route>
+
+              {/* Admin area — own AdminLayout, ADMIN-gated, NOT wrapped in SiteLayout */}
+              <Route
+                path="/admin"
+                element={<RequireAdmin><AdminLayout /></RequireAdmin>}
+              >
+                <Route path="gallery" element={<AdminGalleryPage />} />
               </Route>
             </Routes>
           </BrowserRouter>
