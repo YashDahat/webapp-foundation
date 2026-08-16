@@ -117,6 +117,12 @@
 			<artifactId>razorpay-java</artifactId>
 			<version>1.4.3</version>
 		</dependency>
+		<!-- S3-compatible object storage (MinIO self-hosted now; real AWS S3 by config later) -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.31.6</version>
+		</dependency>
 	</dependencies>
 
 	<build>
