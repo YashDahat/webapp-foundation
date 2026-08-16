@@ -1,9 +1,11 @@
 // GENERATED foundation scaffold — do not edit (pipeline overwrites this per business).
-// Auth context: owns token persistence + JWT-derived user state. The HTTP login call
-// lives in services/authService (foundation-owned, cloned verbatim); this delegates to it
-// and stores the JWT. UI must log in via useAuth().login — not authService.login directly.
+// Auth context: owns token persistence + JWT-derived user state. The HTTP login/register
+// calls live in services/authService (foundation-owned, cloned verbatim); this delegates to
+// them and stores the JWT. UI must use useAuth().login / useAuth().register — not the
+// authService functions directly (those don't persist the token).
 import React, { createContext, useState, useContext, ReactNode } from 'react';
 import * as authApi from '@/services/authService';
+import type { RegisterRequest } from '@/types/auth';
 
 interface AuthUser { username: string; role: string }
 
@@ -13,6 +15,7 @@ interface AuthContextType {
   isLoading: boolean;
   user: AuthUser | null;
   login: (username: string, password: string) => Promise<void>;
+  register: (details: RegisterRequest) => Promise<void>;
   logout: () => void;
 }
 
@@ -42,16 +45,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return t ? userFromToken(t) : null;
   });
 
+  const applyToken = (jwt: string) => {
+    if (jwt) {
+      localStorage.setItem('token', jwt);
+      setToken(jwt);
+      setIsAuthenticated(true);
+      setUser(userFromToken(jwt));
+    }
+  };
+
   const login = async (username: string, password: string) => {
     setIsLoading(true);
     try {
       const { token: jwt } = await authApi.login({ username, password });
-      if (jwt) {
-        localStorage.setItem('token', jwt);
-        setToken(jwt);
-        setIsAuthenticated(true);
-        setUser(userFromToken(jwt));
-      }
+      applyToken(jwt);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Self-service signup — creates a USER and auto-logs in with the returned JWT.
+  const register = async (details: RegisterRequest) => {
+    setIsLoading(true);
+    try {
+      const { token: jwt } = await authApi.register(details);
+      applyToken(jwt);
     } finally {
       setIsLoading(false);
     }
@@ -65,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, isLoading, user, login, logout }}>
+    <AuthContext.Provider value={{ token, isAuthenticated, isLoading, user, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -24,7 +24,11 @@ interface UserRepository extends JpaRepository<User, Integer> {
 class UserService {
   UserDetails loadUserByUsername(String email);
 }
-// For registration/lookup, inject UserRepository + PasswordEncoder directly; do not add methods to UserService.
+// Signup is already provided by the /register endpoint below (creates USER + auto-login) — use it,
+// don't build your own. For any other lookup, inject UserRepository directly; do not add methods to UserService.
+
+// Signup DTO (fenced).
+class RegisterRequest { String firstName; String lastName; String email; String password; }
 
 class JwtUtil {
   String  generateToken(UserDetails userDetails);
@@ -35,9 +39,9 @@ class JwtUtil {
 }
 ```
 
-Login endpoint (already implemented — do not rebuild):
-`POST /api/v1/auth/login`  ·  body `AuthRequest { String username; String password }` (username = email)
-→ `AuthResponse { String token }`.
+Auth endpoints (already implemented — do not rebuild), both public and both return `AuthResponse { String token }`:
+`POST /api/v1/auth/login`     ·  body `AuthRequest { String username; String password }` (username = email)
+`POST /api/v1/auth/register`  ·  body `RegisterRequest { firstName; lastName; email; password }` → 201, always role USER, then auto-login (returns a JWT); 409 if the email already exists.
 
 Beans available to inject anywhere: `PasswordEncoder`, `AuthenticationManager`, `AuthenticationProvider`.
 The single ADMIN user is seeded from the `admin.email` / `admin.password` properties.

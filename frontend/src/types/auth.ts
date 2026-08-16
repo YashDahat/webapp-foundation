@@ -14,9 +14,18 @@ export interface AuthRequest {
   password: string;
 }
 
-/** Response body for POST /api/v1/auth/login — com.webappfoundation.dto.AuthResponse. */
+/** Response body for POST /api/v1/auth/login and /register — com.webappfoundation.dto.AuthResponse. */
 export interface AuthResponse {
   token: string;
+}
+
+/** Request body for POST /api/v1/auth/register — com.webappfoundation.dto.RegisterRequest.
+ *  Self-service signup; the backend always assigns role USER. */
+export interface RegisterRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
 }
 
 /**

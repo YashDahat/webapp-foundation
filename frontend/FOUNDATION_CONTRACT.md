@@ -15,10 +15,13 @@ useAuth(): {
   isLoading: boolean;                                     // NOT `loading`
   user: AuthUser | null;                                  // guard for null
   login: (username: string, password: string) => Promise<void>;   // TWO string args, not an object
+  register: (details: RegisterRequest) => Promise<void>;          // ONE object arg; creates a USER + auto-logs in
   logout: () => void;
 }
 
 type AuthUser = { username: string; role: string };       // role is "ADMIN" | "USER" (a string)
+// RegisterRequest is imported from '@/types/auth':
+type RegisterRequest = { firstName: string; lastName: string; email: string; password: string };
 ```
 
 Gotchas (each was a real failure this run):
@@ -26,6 +29,8 @@ Gotchas (each was a real failure this run):
 - `user.role` is a **single string**, **not** `user.roles` (no array).
 - There is **no** `user.email` and **no** `user.name`; the only fields are `username` and `role`.
 - `login` takes `(username, password)` — call `login(values.username, values.password)`, not `login(values)`.
+- `register` takes a **single object** `{ firstName, lastName, email, password }` — NOT positional args. Signup always yields role `USER` and auto-logs in; do not build your own `/register` call.
+- Build the signup form/page yourself with `useAuth().register(...)`; there is no prebuilt signup UI.
 - `<AuthProvider>` is already mounted at the app root — do not add another.
 
 ## Cart — `@/cart` (also re-exported from `@/context/CartContext`)
