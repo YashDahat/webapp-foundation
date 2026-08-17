@@ -10,7 +10,7 @@ import SignupPage from '@/pages/SignupPage'
 import CartPage from '@/pages/CartPage'
 import CheckoutPage from '@/pages/CheckoutPage'
 import GalleryPage from '@/pages/GalleryPage'
-import AdminGalleryPage from '@/pages/admin/AdminGalleryPage'
+import AdminMediaPage from '@/pages/admin/AdminMediaPage'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/RequireAdmin'
 import AdminLayout from '@/components/AdminLayout'
@@ -50,7 +50,7 @@ export default function App() {
                 path="/admin"
                 element={<RequireAdmin><AdminLayout /></RequireAdmin>}
               >
-                <Route path="gallery" element={<AdminGalleryPage />} />
+                <Route path="media" element={<AdminMediaPage />} />
               </Route>
             </Routes>
           </BrowserRouter>

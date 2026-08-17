@@ -27,7 +27,7 @@ export default function AdminLayout() {
       </header>
       <div className="mx-auto flex max-w-6xl gap-6 px-4 py-6">
         <aside className="w-48 shrink-0 space-y-1">
-          <NavLink to="/admin/gallery" className={linkClass} data-testid="admin-nav-gallery">Gallery</NavLink>
+          <NavLink to="/admin/media" className={linkClass} data-testid="admin-nav-media">Media library</NavLink>
         </aside>
         <main className="min-w-0 flex-1">
           <Outlet />

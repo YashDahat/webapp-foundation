@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
  * back; a logged-in non-admin is sent home. Backend endpoints under /api/v1/admin/** are independently
  * ADMIN-gated — this is the UI guard, not the security boundary.
  *
- *   <Route path="/admin/gallery" element={<RequireAdmin><AdminGalleryPage /></RequireAdmin>} />
+ *   <Route path="/admin/media" element={<RequireAdmin><AdminMediaPage /></RequireAdmin>} />
  */
 export default function RequireAdmin({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();

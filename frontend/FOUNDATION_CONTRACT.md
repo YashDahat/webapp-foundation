@@ -108,26 +108,35 @@ You must generate `src/config/siteConfig.ts` with `export const siteConfig: Site
 import { cn } from '@/lib/utils';     // cn(...inputs: ClassValue[]): string — className merge helper
 ```
 
-## Gallery — `@/components/gallery/GallerySection`, `@/hooks/useGallery`
+## Media library + gallery — `@/hooks/useMedia`, `@/components/gallery/GallerySection`
 
-A full image gallery ships PREBUILT (types, SDK, hook, public component, public `/gallery` page, and an
-admin manager at `/admin/gallery`). Do NOT rebuild it, re-declare its types, or build your own upload UI.
+ONE media library ships PREBUILT. Admins manage ALL images at `/admin/media` (upload, edit, delete, and
+tick "Show in public gallery"). The public gallery is a VIEW over it — there is NO separate admin gallery
+page. Do NOT rebuild any of this, re-declare its types, or build your own upload UI/endpoint.
 
+**Show gallery images on the site** (public, read-only):
 ```ts
 import GallerySection from '@/components/gallery/GallerySection';
 import { useGallery } from '@/hooks/useGallery';
-import type { GalleryItemDto, GallerySection as SectionType } from '@/types/gallery';
+import type { GalleryItemDto } from '@/types/gallery';
 
 <GallerySection section="WEBSITE" title="Gallery" />   // main site gallery grid
 <GallerySection section="EVENT" title="Events" />       // event photos, grouped by eventName
 useGallery(section?): { data: GalleryItemDto[] | undefined; isLoading; isError }
-
-type GalleryItemDto = { id: number; url: string; caption: string | null;
-                        section: 'WEBSITE'|'EVENT'; eventName: string | null;
-                        eventDate: string | null; sortOrder: number };   // url is ready to use in <img src>
+type GalleryItemDto = { id: number; url: string; caption: string | null; section: 'WEBSITE'|'EVENT';
+                        eventName: string | null; eventDate: string | null; sortOrder: number };
 ```
-To display images anywhere, drop in `<GallerySection>` (or read `useGallery()`); admins upload/manage at
-`/admin/gallery`. Uploads/edits/deletes go through `@/services/galleryService` (ADMIN only).
+
+**Entity images** (a trainer's photo, a product image): give the entity a plain `photoUrl`/`imageUrl`
+string. The admin uploads in the media library, copies the `/api/v1/media/<key>` link, and it's stored
+on the entity; render `<img src={entity.photoUrl}>`.
+```ts
+import { uploadMedia } from '@/services/mediaService';   // { file, label?, showInGallery?, section?, ... } -> MediaAssetDto
+type MediaAssetDto = { id: number; url: string; filename: string | null; contentType: string;
+                       sizeBytes: number | null; label: string | null; showInGallery: boolean;
+                       section: 'WEBSITE'|'EVENT'|null; eventName: string | null; eventDate: string | null;
+                       sortOrder: number | null; uploadedAt: string };   // url ready for <img src>
+```
 
 ---
 

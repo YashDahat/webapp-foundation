@@ -99,27 +99,36 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 Endpoints (already implemented): `POST /api/v1/payments/create-order`, `/verify`, `/webhook`.
 `PaymentGateway` is the provider adapter — call payments through `PaymentService`, never the gateway directly.
 
-## Gallery + media (image storage)
+## Media library + gallery (image storage)
 
-A full image gallery is already implemented and wired — admins upload/manage the website gallery
-section and event photos; the public site displays them. Bytes live in object storage (MinIO/S3 via
-`StorageService`); do NOT rebuild any of this and do NOT add your own upload/storage.
+ONE media library is already implemented and wired — admins upload/manage ALL images at `/admin/media`;
+bytes live in object storage (MinIO/S3 via `StorageService`). The public gallery is a VIEW over it: an
+image is published to the gallery by an admin flag (`showInGallery` + section/event), not a separate
+store. Do NOT rebuild any of this and do NOT add your own upload/storage.
 
 ```java
-class GalleryItem { Long id; String objectKey; String contentType; String caption;
-                    GallerySection section; String eventName; LocalDate eventDate;
-                    Integer sortOrder; Instant uploadedAt; }
+class MediaAsset    { Long id; String objectKey; String filename; String contentType; Long sizeBytes;
+                      String label; Boolean showInGallery; GallerySection section; String eventName;
+                      LocalDate eventDate; Integer sortOrder; Instant uploadedAt; }
+class MediaAssetDto { Long id; String url; String filename; String contentType; Long sizeBytes;
+                      String label; Boolean showInGallery; GallerySection section; String eventName;
+                      LocalDate eventDate; Integer sortOrder; Instant uploadedAt; }   // url = /api/v1/media/<key>
 enum GallerySection { WEBSITE, EVENT }
 class GalleryItemDto { Long id; String url; String caption; GallerySection section;
-                       String eventName; LocalDate eventDate; Integer sortOrder; }   // url = /api/v1/media/<key>
-interface GalleryItemRepository extends JpaRepository<GalleryItem, Long> { ... }
-class GalleryService { ... }                       // orchestrates storage + repo
+                       String eventName; LocalDate eventDate; Integer sortOrder; }   // public gallery view
 interface StorageService { String store(MultipartFile file, String prefix); StoredObject load(String key); void delete(String key); }
 ```
 
-Endpoints (already implemented): `GET /api/v1/gallery(?section=WEBSITE|EVENT)` (public),
-`GET /api/v1/media/{key}` (public, streams the image), and `POST/PUT/DELETE /api/v1/admin/gallery`
-(ADMIN — multipart upload / edit / delete).
+Endpoints (already implemented):
+- `GET /api/v1/media/{key}` (public, streams the image)
+- `GET /api/v1/gallery(?section=WEBSITE|EVENT)` (public — the media flagged showInGallery)
+- `GET/POST/PUT/DELETE /api/v1/admin/media` (ADMIN — POST/PUT are multipart: file + label +
+  showInGallery/section/eventName/eventDate/sortOrder)
+
+**Entity-image pattern** (a Trainer's photo, a product image): give your entity a plain `String photoUrl`
+(or `imageUrl`) field, have the admin upload in the media library, store the returned `/api/v1/media/<key>`
+url on the entity, and render `<img src={entity.photoUrl}>`. Never store bytes on the entity and never
+add your own upload endpoint.
 
 ## Shared exceptions
 
@@ -135,6 +144,7 @@ class PaymentGatewayException extends RuntimeException { PaymentGatewayException
 
 **Do not** generate: `SecurityConfig`, `JwtAuthFilter`, `PasswordEncoder`, `AuthController`,
 `PaymentController`, `SpaController`, `User`, `Role`, `Payment`, `UserRepository`, `PaymentRepository`,
-the gallery/media/storage spine (`GalleryItem`, `GallerySection`, `GalleryItemRepository`,
-`GalleryService`, `GalleryController`, `MediaController`, `AdminGalleryController`, `StorageService`,
-`MinioStorageService`, `S3Config`), or any auth/payment/gallery DTO listed above — all fenced and wired.
+the media/gallery/storage spine (`MediaAsset`, `MediaAssetRepository`, `MediaAssetService`,
+`AdminMediaController`, `GalleryController`, `MediaController`, `GallerySection`, `GalleryItemDto`,
+`StorageService`, `MinioStorageService`, `S3Config`), or any auth/payment/media DTO listed above —
+all fenced and wired.
