@@ -6,6 +6,36 @@ or edit them. Import from the exact paths below and match every signature, field
 
 ---
 
+## Prebuilt pages & routes (foundation-owned — do NOT rebuild)
+
+These pages already exist and are already wired into the router. Never re-create the page file,
+re-add its `<Route>`, or build a duplicate (e.g. your own login form or header cart button). Link to
+them and, where noted, add your business content on top.
+
+| Route | Page file | Gate | Notes |
+|---|---|---|---|
+| `/login` | `pages/LoginPage.tsx` | public | Prebuilt auth form. Link via `/login`; header `showAuth` already does. |
+| `/signup` | `pages/SignupPage.tsx` | public | Prebuilt register form (role `USER`, auto-login). Link via `/signup`. |
+| `/cart` | `pages/CartPage.tsx` | public | Cart view; header cart button links here. Build add-to-cart controls on your product pages. |
+| `/checkout` | `pages/CheckoutPage.tsx` | `RequireAuth` | Working final-step checkout (see Checkout section) — usable **as-is**. |
+| `/gallery` | `pages/GalleryPage.tsx` | public | Public gallery view over the media library. |
+| `/admin/media` | `pages/admin/AdminMediaPage.tsx` | `RequireAdmin` | Media library admin. |
+
+`LoginPage`/`SignupPage`/`CartPage`/`GalleryPage`/`AdminMediaPage` are **fenced** — do not edit them.
+`CheckoutPage` is foundation-provided but **replaceable**: keep it as-is for a simple flow, or replace
+that one file with a richer checkout that still uses `useCart()`/`useCheckout()` (see Checkout section).
+
+## App shell — `src/App.tsx`, `src/AppRoutes.tsx`, `src/AppProviders.tsx` (FENCED — auto-derived)
+
+**Never write, edit, or plan `App.tsx`, `AppRoutes.tsx`, or `AppProviders.tsx`.** `App.tsx` is a frozen
+shell that mounts the provider tree (`QueryClientProvider` → `AuthProvider` → `CartProvider` →
+`BrowserRouter`) around `<AppRoutes/>`. The **route table lives in `AppRoutes.tsx`, which the pipeline
+DERIVES from your page plan at build time** — every page you plan with a route is added automatically,
+public pages are wrapped in `SiteLayout`, admin pages in `AdminLayout`, and `/login` `/signup` `/cart`
+`/checkout` `/gallery` `/admin/media` are always present. Providers you discover are injected into the
+derived `AppProviders.tsx`. Just build your page components and give each a route in the plan — do NOT
+hand-write routing, `<BrowserRouter>`, or the provider tree anywhere.
+
 ## Auth — `@/hooks/useAuth`, `@/context/AuthContext`
 
 ```ts
@@ -69,6 +99,14 @@ interface CheckoutController  { steps: CheckoutStep[]; current: CheckoutStep | u
                                 next: () => boolean; back: () => void; goTo: (id: string) => void }
 ```
 Gotcha: `useCheckout()` with no argument is a type error — always pass the ordered `steps` array.
+
+**A working checkout page is PREBUILT** at `/checkout` (`pages/CheckoutPage.tsx`, `RequireAuth`-gated,
+auto-routed). It renders the cart line items, the total, and a "Place order" button (clears the cart),
+and shows the logged-in user from `useAuth()`. Use it **as-is** as the final step of a simple flow —
+"Proceed to checkout" on `/cart` already links here. Only if the business needs a richer flow (address,
+delivery slot, payment) do you replace that one page file with your own, still driving it via
+`useCheckout(steps)` and sending **only the cart** to the server (the user is derived from the JWT —
+never send a user id/email; orders link by `Integer userId`).
 
 ## API client — `@/api/client`
 
