@@ -1,0 +1,138 @@
+{
+  "_comment": "The foundation's self-declaration of its features and the pipeline seams each contributes. The discovery-worker pipeline reads this at clone time (FoundationManifest.load) and projects every 'what to skip / never strip / how to gate / which paths are fenced' set from it — so ONBOARDING A NEW FOUNDATION FEATURE IS AN EDIT HERE (plus its FOUNDATION_CONTRACT.md shapes), never a pipeline code change. Keep this in sync with the code you ship: add a feature = add an entry; change a fenced module's public surface = update the matching entry AND the contract card in the same commit. Unknown fields are ignored; a missing/malformed file makes the pipeline fall back to its built-in default.",
+  "features": [
+    {
+      "id": "auth",
+      "core": true,
+      "requires": [],
+      "backend": {
+        "controllers": ["AuthController.java"],
+        "packages": ["security", "config/SecurityConfig"],
+        "fenced": [
+          "User", "Role", "UserRepository", "UserService", "UserDetailsServiceImpl",
+          "JwtUtil", "JwtService", "JwtTokenProvider", "JwtAuthFilter",
+          "SecurityConfig", "SecurityConfiguration", "PasswordEncoderConfig", "PasswordEncoder",
+          "AuthController", "AdminInitializer",
+          "AuthRequest", "AuthResponse", "RegisterRequest"
+        ]
+      },
+      "frontend": {
+        "modules": ["/context/authcontext", "/hooks/useauth", "/services/authservice", "/types/auth."],
+        "guards": ["ProtectedRoute", "AdminLayout"],
+        "fenced": ["AuthContext", "useAuth", "authService"],
+        "pages": [{ "key": "ACCOUNT", "gate": "AUTH", "nav": true }]
+      },
+      "config": {
+        "env": ["JWT_SECRET"],
+        "compose": []
+      }
+    },
+    {
+      "id": "shell",
+      "core": true,
+      "requires": [],
+      "backend": {
+        "controllers": ["SpaController.java"],
+        "packages": [],
+        "fenced": ["SpaController"]
+      },
+      "frontend": {
+        "modules": ["/shell/"],
+        "guards": ["siteConfig"],
+        "fenced": ["Header", "Footer", "Layout", "SiteHeader", "SiteFooter", "SiteLayout"],
+        "pages": []
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "exceptions",
+      "core": true,
+      "requires": [],
+      "backend": {
+        "controllers": [],
+        "packages": ["exception"],
+        "fenced": ["ResourceNotFoundException"]
+      },
+      "frontend": {
+        "modules": [],
+        "guards": [],
+        "fenced": [],
+        "pages": []
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "payment",
+      "core": false,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": ["PaymentController.java"],
+        "packages": ["gateway", "event"],
+        "fenced": [
+          "Payment", "PaymentStatus", "PaymentRepository", "PaymentService",
+          "PaymentController", "PaymentGateway", "RazorpayPaymentGateway", "DemoPaymentGateway",
+          "PaymentGatewayConfig", "RazorpayConfiguration", "GatewayWebhookEvent",
+          "PaymentCapturedEvent", "PaymentGatewayException",
+          "CreatePaymentRequest", "PaymentOrderResponse", "VerifyPaymentRequest",
+          "PaymentVerificationResponse"
+        ]
+      },
+      "frontend": {
+        "modules": [],
+        "guards": [],
+        "fenced": [],
+        "pages": [{ "key": "CHECKOUT", "gate": "AUTH", "nav": false }]
+      },
+      "config": {
+        "env": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+        "compose": []
+      }
+    },
+    {
+      "id": "cart",
+      "core": false,
+      "requires": [],
+      "backend": {
+        "controllers": [],
+        "packages": [],
+        "fenced": []
+      },
+      "frontend": {
+        "modules": ["/src/cart/", "/context/cartcontext", "/context/checkoutcontext"],
+        "guards": [],
+        "fenced": ["CartContext", "CheckoutContext", "useCheckout"],
+        "pages": [{ "key": "CART", "gate": "PUBLIC", "nav": false }]
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "gallery",
+      "core": false,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": ["GalleryController.java", "MediaController.java", "AdminMediaController.java"],
+        "packages": ["storage"],
+        "fenced": []
+      },
+      "frontend": {
+        "modules": ["/components/gallery/", "/hooks/usemedia"],
+        "guards": [],
+        "fenced": [],
+        "pages": [{ "key": "GALLERY", "gate": "PUBLIC", "nav": true }]
+      },
+      "config": {
+        "env": ["S3_ENDPOINT", "S3_BUCKET", "S3_PATH_STYLE"],
+        "compose": ["minio"]
+      }
+    }
+  ]
+}
