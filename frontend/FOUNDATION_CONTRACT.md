@@ -49,7 +49,7 @@ useAuth(): {
   logout: () => void;
 }
 
-type AuthUser = { username: string; role: string };       // role is "ADMIN" | "USER" (a string)
+export interface AuthUser { username: string; role: string }  // role is "ADMIN" | "USER" (a string); import it from '@/context/AuthContext' — do NOT redeclare
 // RegisterRequest is imported from '@/types/auth':
 type RegisterRequest = { firstName: string; lastName: string; email: string; phone: string; password: string };
 ```

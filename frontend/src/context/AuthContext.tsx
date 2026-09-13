@@ -7,7 +7,7 @@ import React, { createContext, useState, useContext, ReactNode } from 'react';
 import * as authApi from '@/services/authService';
 import type { RegisterRequest } from '@/types/auth';
 
-interface AuthUser { username: string; role: string }
+export interface AuthUser { username: string; role: string }
 
 interface AuthContextType {
   token: string | null;
