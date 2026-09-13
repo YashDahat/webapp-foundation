@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
@@ -18,8 +19,10 @@ import java.io.UncheckedIOException;
 import java.util.UUID;
 
 /**
- * S3/MinIO-backed {@link StorageService}. The bucket is created on startup if absent. Object keys are
- * server-generated ({@code <prefix>-<uuid><ext>}) — never derived from the client filename.
+ * S3/MinIO-backed {@link StorageService}. The bucket is created on startup if absent and storage is
+ * reachable; if storage is unreachable at boot the check is deferred to first use (startup never fails
+ * on a storage outage). Object keys are server-generated ({@code <prefix>-<uuid><ext>}) — never
+ * derived from the client filename.
  */
 @Service
 public class MinioStorageService implements StorageService {
@@ -28,6 +31,7 @@ public class MinioStorageService implements StorageService {
 
     private final S3Client s3;
     private final String bucket;
+    private volatile boolean bucketReady = false;
 
     public MinioStorageService(S3Client s3, @Value("${s3.bucket:media}") String bucket) {
         this.s3 = s3;
@@ -36,6 +40,20 @@ public class MinioStorageService implements StorageService {
 
     @PostConstruct
     void ensureBucket() {
+        try {
+            ensureBucketNow();
+        } catch (SdkClientException e) {
+            // Object storage unreachable at startup (e.g. minio not up yet, or a transient outage).
+            // Do NOT fail bean init — that cancels the context refresh and kills the whole application
+            // (the prior MinIO boot-death). Defer the bucket check to first use; store() re-attempts it
+            // lazily once storage is reachable.
+            log.warn("[storage] Object storage unreachable at startup ({}) — deferring bucket check to first use",
+                    e.getMessage());
+        }
+    }
+
+    /** Head-or-create the bucket. Propagates connectivity (SdkClientException) and real S3 errors. */
+    private void ensureBucketNow() {
         try {
             s3.headBucket(b -> b.bucket(bucket));
         } catch (NoSuchBucketException e) {
@@ -47,6 +65,15 @@ public class MinioStorageService implements StorageService {
                 throw e;
             }
         }
+        bucketReady = true;
+    }
+
+    /** Lazily ensure the bucket before a write. If storage is still unreachable this surfaces as a
+     *  real upload error (IllegalState/SdkClientException) — never a boot crash. */
+    private void ensureBucketReady() {
+        if (!bucketReady) {
+            ensureBucketNow();
+        }
     }
 
     private void createBucket() {
@@ -56,6 +83,7 @@ public class MinioStorageService implements StorageService {
 
     @Override
     public String store(MultipartFile file, String prefix) {
+        ensureBucketReady();
         String key = (prefix == null || prefix.isBlank() ? "obj" : prefix)
                 + "-" + UUID.randomUUID() + extensionOf(file.getOriginalFilename());
         try {
