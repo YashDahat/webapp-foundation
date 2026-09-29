@@ -14,8 +14,10 @@ resolution is automatic. Match every method signature and field exactly.
 // getUsername() returns email (JWT subject), but login accepts email OR phone (see below).
 class User {
   Integer id; String firstName; String lastName; String email; String phone; String password; Role role;
+  boolean emailVerified;      // set true after the signup OTP is confirmed; login is blocked until then
+  boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts are server-internal)
 }
-enum Role { ADMIN, USER }        // authority is the bare name ("ADMIN"), no ROLE_ prefix
+enum Role { SUPER_ADMIN, ADMIN, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
 
 interface UserRepository extends JpaRepository<User, Integer> {
   Optional<User> findByEmail(String email);
@@ -57,12 +59,40 @@ class JwtUtil {
   email or phone, use `UserRepository.findByEmail(...)` / `findByPhone(...)`; do not denormalize them
   onto domain rows as the link.
 
-Auth endpoints (already implemented — do not rebuild), both public and both return `AuthResponse { String token }`:
-`POST /api/v1/auth/login`     ·  body `AuthRequest { String username; String password }` — **username = email OR phone** (India-first).
-`POST /api/v1/auth/register`  ·  body `RegisterRequest { firstName; lastName; email; phone; password }` → 201, always role USER, then auto-login (returns a JWT); 409 if the email OR phone already exists.
+Auth endpoints (already implemented — do not rebuild). `LoginResponse` is returned by both `/login` and
+`/register`: `LoginResponse { String token; boolean twoFactorRequired; boolean verificationRequired; String challengeId }`.
+`token` set = logged in; `twoFactorRequired` = finish via /verify-2fa; `verificationRequired` = email
+not verified, finish via /verify-signup. A 6-digit OTP is emailed for either challenge.
+- `POST /api/v1/auth/register` · body `RegisterRequest { firstName; lastName; email; phone; password }` → 201; always role USER, created **unverified**, emails an OTP and returns `LoginResponse { verificationRequired:true, challengeId }` (**no token**). 409 on duplicate email/phone; 400 on weak password (`PasswordPolicy`: ≥ 8 chars incl. a letter and a digit).
+- `POST /api/v1/auth/verify-signup` · body `VerifyTwoFactorRequest { challengeId; code }` → verifies OTP, marks account verified, returns `AuthResponse { token }`.
+- `POST /api/v1/auth/login` · body `AuthRequest { username; password }` — **username = email OR phone**. Unverified → `verificationRequired`; else 2FA on → `twoFactorRequired`; else `token`.
+- `POST /api/v1/auth/verify-2fa` · body `VerifyTwoFactorRequest { challengeId; code }` → `AuthResponse { token }`.
+- `POST /api/v1/auth/2fa/enable` · `POST /api/v1/auth/2fa/disable` — authenticated; toggle the current user's 2FA.
+- `POST /api/v1/auth/change-password` · authenticated · body `ChangePasswordRequest { currentPassword; newPassword }` → 200 (400 if current wrong / new weak).
+- `POST /api/v1/auth/forgot-password` · body `ForgotPasswordRequest { email }` → always 200; emails a reset link `<app.base-url>/reset-password?token=…` if the account exists.
+- `POST /api/v1/auth/reset-password` · body `ResetPasswordRequest { token; newPassword }` → 200 (401 if link invalid/expired, 400 if weak).
+
+```java
+// OTP: issues/verifies the emailed 6-digit code (BCrypt-hashed, TTL + attempt-locked) used by both
+// signup verification and 2FA login. Internal to the auth flow. OTP_TTL_MINUTES controls validity.
+class OtpService { void issue(User u); boolean verify(User u, String code); }
+// PasswordPolicy: min 8 chars incl. a letter + a digit; throws 400 on register/change/reset.
+class PasswordPolicy { void validate(String password); }
+```
+
+### Admin users (ADMIN + SUPER_ADMIN)
+
+```java
+class UserDto { Integer id; String firstName; String lastName; String email; String phone;
+               Role role; boolean emailVerified; boolean twoFactorEnabled; }   // never exposes the password
+```
+- `GET /api/v1/admin/users` — list all users.
+- `PUT /api/v1/admin/users/{id}/role` · body `UpdateUserRoleRequest { Role role }` → 409 if assigning a 2nd SUPER_ADMIN.
+- `DELETE /api/v1/admin/users/{id}` — **SUPER_ADMIN only** (403 otherwise); cannot delete self or a SUPER_ADMIN.
+- `POST /api/v1/admin/users/bulk-upload` — multipart `file`; columns firstName,lastName,email,phone,password,role → `BulkUploadResult`.
 
 Beans available to inject anywhere: `PasswordEncoder`, `AuthenticationManager`, `AuthenticationProvider`.
-The single ADMIN user is seeded from the `admin.email` / `admin.password` properties.
+The single SUPER_ADMIN owner is seeded from the `admin.email` / `admin.password` properties (email-verified).
 
 ## Payments
 
@@ -130,6 +160,113 @@ Endpoints (already implemented):
 url on the entity, and render `<img src={entity.photoUrl}>`. Never store bytes on the entity and never
 add your own upload endpoint.
 
+**Multiple images per entity** (a product gallery, event photos): store an ordered list of media URLs —
+```java
+@ElementCollection
+@CollectionTable(name = "<entity>_images", joinColumns = @JoinColumn(name = "<entity>_id"))
+@OrderColumn(name = "image_order")
+@Column(name = "image_url")
+private List<String> images = new ArrayList<>();
+```
+plus an optional `String imageUrl` primary/thumbnail field. The admin manages these via the
+`MultiImagePicker` component (frontend contract). Still just URLs into the one media library — no new
+storage.
+
+## Email
+
+A reusable, non-blocking transactional-email spine. `EmailService` is auto-configured from
+`spring.mail.*` / `SMTP_*` env; inject it anywhere. `@Async` is enabled (`AsyncConfig`), so domain
+notifications run off the request thread after the transaction commits.
+
+```java
+class EmailService { boolean sendHtml(String to, String subject, String html); }   // NEVER throws — logs + returns false on failure
+```
+
+**Notification pattern (how to email on a domain change):**
+1. Publish a Spring event from your service (e.g. `applicationEventPublisher.publishEvent(new FooHappenedEvent(dto))`).
+2. Add an `@Async @TransactionalEventListener(phase = AFTER_COMMIT, fallbackExecution = true)` handler
+   in the `notification/` package that builds inline HTML and calls `emailService.sendHtml(...)`.
+
+The listener depends only on `EmailService` (+ repositories), so the direction is always
+domain → notification — no bean cycle. Config is ready; **do not** re-declare `EmailService`,
+`AsyncConfig`, or add a second `JavaMailSender`.
+
+## Support (threaded customer tickets)
+
+Threaded customer support: a customer opens a case (subject + first message); customer and STAFF
+exchange messages. Email notifications (via `EmailNotificationListener`): every STAFF reply publishes
+`SupportRepliedEvent` → emails the **customer**; every CUSTOMER message — case creation and every reply —
+publishes `SupportCustomerMessageEvent` → emails the **admin** (`admin.email`). Owned by
+`SupportService` — inject it; do NOT re-declare any of these.
+
+```java
+class SupportCase    { Long id; Integer userId; String subject; SupportStatus status; Instant createdAt; Instant updatedAt; }
+class SupportMessage { Long id; Long caseId; SupportAuthor author; String body; List<String> attachments; Instant createdAt; }   // one row per message; attachments = media-library image URLs
+enum SupportStatus { OPEN, IN_PROGRESS, RESOLVED, CLOSED }
+enum SupportAuthor { CUSTOMER, STAFF }
+
+interface SupportCaseRepository extends JpaRepository<SupportCase, Long> {
+  List<SupportCase> findByUserIdOrderByUpdatedAtDesc(Integer userId);
+  List<SupportCase> findAllByOrderByUpdatedAtDesc();
+}
+interface SupportMessageRepository extends JpaRepository<SupportMessage, Long> {
+  List<SupportMessage> findByCaseIdOrderByCreatedAtAsc(Long caseId);
+}
+
+class SupportService {
+  SupportCaseDto        open(Integer userId, CreateSupportCaseRequest req);   // creates case + first CUSTOMER message
+  SupportCaseDto        reply(Integer userId, Long caseId, PostMessageRequest req);   // customer message (ownership-checked)
+  List<SupportCaseDto>  myCases(Integer userId);
+  SupportThreadDto      thread(Integer userId, Long caseId);                  // ownership-checked
+  List<SupportCaseDto>  all();                                               // admin
+  SupportThreadDto      adminThread(Long caseId);                            // admin
+  SupportThreadDto      adminReply(Long caseId, AdminReplyRequest req);      // STAFF message + optional status; publishes SupportRepliedEvent
+}
+class SupportRepliedEvent         { Long caseId; Integer userId; String subject; String replyBody; SupportStatus status; }  // STAFF reply → email customer
+class SupportCustomerMessageEvent { Long caseId; Integer userId; String subject; String messageBody; boolean newCase; }     // CUSTOMER msg → email admin
+
+// DTOs
+class SupportCaseDto    { Long id; Integer userId; String customerName; String customerEmail;
+                          String subject; SupportStatus status; Instant createdAt; Instant updatedAt; }
+class SupportMessageDto { Long id; Long caseId; SupportAuthor author; String body; List<String> attachments; Instant createdAt; }
+class SupportThreadDto  { SupportCaseDto supportCase; List<SupportMessageDto> messages; }
+class CreateSupportCaseRequest { String subject; String message; List<String> attachments; }   // attachments optional
+class PostMessageRequest       { String body; List<String> attachments; }                        // attachments optional
+class AdminReplyRequest        { String body; SupportStatus status; List<String> attachments; }  // status + attachments optional
+```
+
+**Image attachments:** a message can carry `attachments` — media-library image URLs. Upload each file first
+(returns a `MediaAssetDto` whose `url` you put in `attachments`). Customers can't use `/admin/media`, so
+support has its own authenticated upload endpoint.
+
+Endpoints (already implemented):
+- Customer (`@CurrentUser Integer userId`, requires login): `POST /api/v1/support`, `GET /api/v1/support`,
+  `GET /api/v1/support/{id}`, `POST /api/v1/support/{id}/messages`,
+  `POST /api/v1/support/attachments` (multipart `file` → `MediaAssetDto`; any logged-in user).
+- Admin (ADMIN): `GET /api/v1/admin/support`, `GET /api/v1/admin/support/{id}`, `POST /api/v1/admin/support/{id}/reply`.
+
+## Bulk upload (admin CSV/XLSX import)
+
+**COMPULSORY:** every admin entity MUST expose `POST /api/v1/admin/<resource>/bulk-upload` (multipart
+`file`) returning `BulkUploadResult`. Parse the file with the fenced `SpreadsheetParser`, map each row
+to your entity in the entity's own service (`bulkImport(MultipartFile) -> BulkUploadResult`), and
+accumulate a per-row error via `result.addError(rowNumber, message)`.
+
+```java
+class SpreadsheetParser {
+  // Parses .csv (Commons CSV) and .xlsx (Apache POI) into rows keyed by trimmed, lower-cased headers.
+  List<Map<String,String>> parse(MultipartFile file);
+}
+class BulkUploadResult {                       // @Builder; returned by every bulk-upload endpoint
+  int created; int skipped; int failed; List<RowError> errors;
+  void addError(int row, String message);      // appends a RowError and increments failed
+  class RowError { int row; String message; }  // static nested; row = 1-based file row (data starts at 2)
+}
+```
+
+`SpreadsheetParser` and `BulkUploadResult` are fenced — do NOT re-declare them. The per-entity
+`bulkImport` method + `/bulk-upload` endpoint are generated per project (entities are per-project).
+
 ## Shared exceptions
 
 ```java
@@ -143,8 +280,12 @@ class PaymentGatewayException extends RuntimeException { PaymentGatewayException
 ---
 
 **Do not** generate: `SecurityConfig`, `JwtAuthFilter`, `PasswordEncoder`, `AuthController`,
+`OtpService`, `PasswordPolicy`, `AdminUserController`, `UserAdminService`, `UserDto`,
 `PaymentController`, `SpaController`, `User`, `Role`, `Payment`, `UserRepository`, `PaymentRepository`,
+the email spine (`EmailService`, `AsyncConfig`, `EmailNotificationListener`, `OtpService`, `PasswordPolicy`),
+the support spine (`SupportController`, `AdminSupportController`, `SupportService`, and the Support entities/
+repositories/DTOs above), the bulk-upload helpers (`SpreadsheetParser`, `BulkUploadResult`),
 the media/gallery/storage spine (`MediaAsset`, `MediaAssetRepository`, `MediaAssetService`,
 `AdminMediaController`, `GalleryController`, `MediaController`, `GallerySection`, `GalleryItemDto`,
-`StorageService`, `MinioStorageService`, `S3Config`), or any auth/payment/media DTO listed above —
+`StorageService`, `MinioStorageService`, `S3Config`), or any auth/payment/media/support DTO listed above —
 all fenced and wired.

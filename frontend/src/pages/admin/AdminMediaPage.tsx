@@ -36,6 +36,38 @@ function galleryLabel(item: MediaAssetDto): string {
   return 'Website';
 }
 
+/**
+ * A styled "choose file" control over a hidden native input. The button is a real
+ * {@code <label htmlFor>} — clicking it opens the OS file picker via native label→input
+ * association, which works even when the input is display:none and inside a Radix dialog
+ * (a programmatic ref.click() on a hidden input is blocked in some browsers). The selected
+ * filename shows beside it.
+ */
+function FilePicker({ id, testId, buttonLabel, emptyLabel, file, onSelect }: {
+  id: string;
+  testId: string;
+  buttonLabel: string;
+  emptyLabel: string;
+  file: File | null;
+  onSelect: (f: File | null) => void;
+}) {
+  return (
+    <>
+      <input id={id} type="file" accept="image/*" className="hidden"
+             data-testid={testId}
+             onChange={(e) => onSelect(e.target.files?.[0] ?? null)} />
+      <div className="flex items-center gap-3">
+        <Button asChild variant="outline" data-testid={`${testId}-choose`}>
+          <label htmlFor={id} className="cursor-pointer">{buttonLabel}</label>
+        </Button>
+        <span className="truncate text-sm text-muted-foreground" data-testid={`${testId}-name`}>
+          {file ? file.name : emptyLabel}
+        </span>
+      </div>
+    </>
+  );
+}
+
 export default function AdminMediaPage() {
   const queryClient = useQueryClient();
   const { data: assets, isLoading } = useMedia();
@@ -222,8 +254,8 @@ export default function AdminMediaPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="up-file">Image file</Label>
-              <Input id="up-file" type="file" accept="image/*" data-testid="media-file"
-                     onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <FilePicker id="up-file" testId="media-file" buttonLabel="Choose file"
+                          emptyLabel="No file chosen" file={file} onSelect={setFile} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="up-label">Label</Label>
@@ -251,8 +283,8 @@ export default function AdminMediaPage() {
             {editItem && <img src={editItem.url} alt="" className="h-24 w-24 rounded object-cover" />}
             <div className="space-y-2">
               <Label htmlFor="ed-file">Replace file (optional)</Label>
-              <Input id="ed-file" type="file" accept="image/*" data-testid="media-edit-file"
-                     onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <FilePicker id="ed-file" testId="media-edit-file" buttonLabel="Choose file"
+                          emptyLabel="Keep current image" file={file} onSelect={setFile} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="ed-label">Label</Label>

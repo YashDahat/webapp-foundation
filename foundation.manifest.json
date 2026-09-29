@@ -4,26 +4,34 @@
     {
       "id": "auth",
       "core": true,
-      "requires": [],
+      "requires": ["email"],
       "backend": {
-        "controllers": ["AuthController.java"],
+        "controllers": ["AuthController.java", "admin/AdminUserController.java"],
         "packages": ["security", "config/SecurityConfig"],
         "fenced": [
           "User", "Role", "UserRepository", "UserService", "UserDetailsServiceImpl",
           "JwtUtil", "JwtService", "JwtTokenProvider", "JwtAuthFilter",
           "SecurityConfig", "SecurityConfiguration", "PasswordEncoderConfig", "PasswordEncoder",
           "AuthController", "AdminInitializer",
-          "AuthRequest", "AuthResponse", "RegisterRequest"
+          "AuthRequest", "AuthResponse", "RegisterRequest",
+          "OtpService", "PasswordPolicy", "LoginResponse", "VerifyTwoFactorRequest",
+          "ChangePasswordRequest", "ForgotPasswordRequest", "ResetPasswordRequest",
+          "AdminUserController", "UserAdminService", "UserDto", "UpdateUserRoleRequest"
         ]
       },
       "frontend": {
-        "modules": ["/context/authcontext", "/hooks/useauth", "/services/authservice", "/types/auth."],
+        "modules": ["/context/authcontext", "/hooks/useauth", "/services/authservice", "/types/auth.", "/services/userservice", "/types/user"],
         "guards": ["ProtectedRoute", "AdminLayout"],
-        "fenced": ["AuthContext", "useAuth", "authService"],
-        "pages": [{ "key": "ACCOUNT", "gate": "AUTH", "nav": true }]
+        "fenced": ["AuthContext", "useAuth", "authService", "userService"],
+        "pages": [
+          { "key": "ACCOUNT", "gate": "AUTH", "nav": true },
+          { "key": "FORGOT_PASSWORD", "gate": "PUBLIC", "nav": false },
+          { "key": "RESET_PASSWORD", "gate": "PUBLIC", "nav": false },
+          { "key": "ADMIN_USERS", "gate": "ADMIN", "nav": true }
+        ]
       },
       "config": {
-        "env": ["JWT_SECRET"],
+        "env": ["JWT_SECRET", "OTP_TTL_MINUTES", "APP_BASE_URL"],
         "compose": []
       }
     },
@@ -65,6 +73,26 @@
       "config": {
         "env": [],
         "compose": []
+      }
+    },
+    {
+      "id": "email",
+      "core": true,
+      "requires": [],
+      "backend": {
+        "controllers": [],
+        "packages": ["notification"],
+        "fenced": ["EmailService", "AsyncConfig", "EmailNotificationListener"]
+      },
+      "frontend": {
+        "modules": [],
+        "guards": [],
+        "fenced": [],
+        "pages": []
+      },
+      "config": {
+        "env": ["SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_AUTH", "SMTP_STARTTLS", "MAIL_FROM"],
+        "compose": ["mailpit"]
       }
     },
     {
@@ -124,14 +152,104 @@
         "fenced": []
       },
       "frontend": {
-        "modules": ["/components/gallery/", "/hooks/usemedia"],
+        "modules": ["/components/gallery/", "/hooks/usemedia", "/components/admin/multiimagepicker", "/components/admin/imagepicker"],
         "guards": [],
-        "fenced": [],
+        "fenced": ["MultiImagePicker", "ImagePicker"],
         "pages": [{ "key": "GALLERY", "gate": "PUBLIC", "nav": true }]
       },
       "config": {
         "env": ["S3_ENDPOINT", "S3_BUCKET", "S3_PATH_STYLE"],
         "compose": ["minio"]
+      }
+    },
+    {
+      "id": "support",
+      "core": false,
+      "requires": ["auth", "email"],
+      "backend": {
+        "controllers": ["SupportController.java", "admin/AdminSupportController.java"],
+        "packages": [],
+        "fenced": [
+          "SupportCase", "SupportMessage", "SupportStatus", "SupportAuthor",
+          "SupportService", "SupportCaseRepository", "SupportMessageRepository",
+          "SupportRepliedEvent", "SupportCustomerMessageEvent",
+          "SupportController", "AdminSupportController",
+          "SupportCaseDto", "SupportThreadDto", "SupportMessageDto",
+          "CreateSupportCaseRequest", "PostMessageRequest", "AdminReplyRequest"
+        ]
+      },
+      "frontend": {
+        "modules": ["/services/supportservice", "/hooks/supporthooks", "/types/support"],
+        "guards": [],
+        "fenced": ["supportService"],
+        "pages": [
+          { "key": "SUPPORT", "gate": "AUTH", "nav": true },
+          { "key": "ADMIN_SUPPORT", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "bulk-upload",
+      "core": false,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": [],
+        "packages": [],
+        "fenced": ["SpreadsheetParser", "BulkUploadResult"]
+      },
+      "frontend": {
+        "modules": ["/components/admin/bulkuploaddialog", "/types/bulkupload"],
+        "guards": [],
+        "fenced": ["BulkUploadDialog"],
+        "pages": []
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "admin-grid",
+      "core": false,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": [],
+        "packages": [],
+        "fenced": []
+      },
+      "frontend": {
+        "modules": ["/components/admin/admindatagrid", "/components/admin/rowactionscell"],
+        "guards": [],
+        "fenced": ["AdminDataGrid", "RowActionsCell"],
+        "pages": []
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "toasts",
+      "core": true,
+      "requires": [],
+      "backend": {
+        "controllers": [],
+        "packages": [],
+        "fenced": []
+      },
+      "frontend": {
+        "modules": ["/lib/apitoast"],
+        "guards": [],
+        "fenced": ["withToast"],
+        "pages": []
+      },
+      "config": {
+        "env": [],
+        "compose": []
       }
     }
   ]

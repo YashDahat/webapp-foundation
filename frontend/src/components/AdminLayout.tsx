@@ -17,7 +17,7 @@ export default function AdminLayout() {
     `block rounded-md px-3 py-2 text-sm font-medium ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="dark min-h-screen bg-background text-foreground">
       <header className="flex items-center justify-between border-b px-4 py-3">
         <Link to="/admin/gallery" className="font-bold">Admin</Link>
         <div className="flex items-center gap-3">
@@ -25,9 +25,11 @@ export default function AdminLayout() {
           <Button variant="outline" size="sm" onClick={onLogout} data-testid="admin-logout">Log out</Button>
         </div>
       </header>
-      <div className="mx-auto flex max-w-6xl gap-6 px-4 py-6">
+      <div className="mx-auto flex max-w-[90rem] gap-6 px-4 py-6">
         <aside className="w-48 shrink-0 space-y-1">
           <NavLink to="/admin/media" className={linkClass} data-testid="admin-nav-media">Media library</NavLink>
+          <NavLink to="/admin/support" className={linkClass} data-testid="admin-nav-support">Support</NavLink>
+          <NavLink to="/admin/users" className={linkClass} data-testid="admin-nav-users">Users</NavLink>
         </aside>
         <main className="min-w-0 flex-1">
           <Outlet />

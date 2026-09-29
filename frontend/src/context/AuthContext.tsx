@@ -9,13 +9,32 @@ import type { RegisterRequest } from '@/types/auth';
 
 export interface AuthUser { username: string; role: string }
 
+/**
+ * Result of login()/register(): logged in (both flags false, token persisted), or a pending OTP
+ * challenge — twoFactorRequired (finish with verifyTwoFactor) or verificationRequired (finish with
+ * verifySignup). challengeId is set for either challenge.
+ */
+export interface LoginResult { twoFactorRequired: boolean; verificationRequired: boolean; challengeId?: string }
+
 interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   user: AuthUser | null;
-  login: (username: string, password: string) => Promise<void>;
-  register: (details: RegisterRequest) => Promise<void>;
+  /** Validates credentials. May return a 2FA or email-verification challenge (no token persisted then);
+   *  otherwise logs in. */
+  login: (username: string, password: string) => Promise<LoginResult>;
+  /** Completes 2FA login: verifies the emailed code for the challenge and persists the JWT. */
+  verifyTwoFactor: (challengeId: string, code: string) => Promise<void>;
+  /** Completes signup: verifies the emailed code, marks the account verified, and persists the JWT. */
+  verifySignup: (challengeId: string, code: string) => Promise<void>;
+  /** Enable/disable email-OTP 2FA for the current (authenticated) user. */
+  enableTwoFactor: () => Promise<void>;
+  disableTwoFactor: () => Promise<void>;
+  /** Authenticated password change. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  /** Self-service signup — creates an UNVERIFIED account and returns a verification challenge. */
+  register: (details: RegisterRequest) => Promise<LoginResult>;
   logout: () => void;
 }
 
@@ -54,22 +73,59 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const login = async (username: string, password: string) => {
+  const toResult = (res: { twoFactorRequired: boolean; verificationRequired: boolean; challengeId: string | null; token: string | null }): LoginResult => {
+    if (res.twoFactorRequired || res.verificationRequired) {
+      return {
+        twoFactorRequired: res.twoFactorRequired,
+        verificationRequired: res.verificationRequired,
+        challengeId: res.challengeId ?? undefined,
+      };
+    }
+    if (res.token) applyToken(res.token);
+    return { twoFactorRequired: false, verificationRequired: false };
+  };
+
+  const login = async (username: string, password: string): Promise<LoginResult> => {
     setIsLoading(true);
     try {
-      const { token: jwt } = await authApi.login({ username, password });
+      return toResult(await authApi.login({ username, password }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifyTwoFactor = async (challengeId: string, code: string) => {
+    setIsLoading(true);
+    try {
+      const { token: jwt } = await authApi.verifyTwoFactor({ challengeId, code });
       applyToken(jwt);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Self-service signup — creates a USER and auto-logs in with the returned JWT.
-  const register = async (details: RegisterRequest) => {
+  const verifySignup = async (challengeId: string, code: string) => {
     setIsLoading(true);
     try {
-      const { token: jwt } = await authApi.register(details);
+      const { token: jwt } = await authApi.verifySignup({ challengeId, code });
       applyToken(jwt);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const enableTwoFactor = async () => { await authApi.enableTwoFactor(); };
+  const disableTwoFactor = async () => { await authApi.disableTwoFactor(); };
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    await authApi.changePassword({ currentPassword, newPassword });
+  };
+
+  // Self-service signup — creates an UNVERIFIED account and returns a verification challenge (no token
+  // until the emailed OTP is confirmed via verifySignup).
+  const register = async (details: RegisterRequest): Promise<LoginResult> => {
+    setIsLoading(true);
+    try {
+      return toResult(await authApi.register(details));
     } finally {
       setIsLoading(false);
     }
@@ -83,7 +139,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, isLoading, user, login, register, logout }}>
+    <AuthContext.Provider value={{ token, isAuthenticated, isLoading, user, login, verifyTwoFactor, verifySignup, enableTwoFactor, disableTwoFactor, changePassword, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

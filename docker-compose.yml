@@ -16,6 +16,13 @@ services:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
       interval: 30s
       retries: 3
+  # Local dev SMTP catcher — sends nowhere real; inspect captured email at http://localhost:8025.
+  # Point .env at it: SMTP_HOST=mailpit, SMTP_PORT=1025, SMTP_AUTH=false, SMTP_STARTTLS=false.
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025"
+    restart: unless-stopped
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"

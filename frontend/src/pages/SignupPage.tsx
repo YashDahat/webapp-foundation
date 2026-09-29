@@ -12,6 +12,7 @@ import {
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter,
 } from '@/components/ui/card';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 
 // India-first signup: phone is required (a primary contact + alternate login identity).
 const schema = z.object({
@@ -19,17 +20,23 @@ const schema = z.object({
   lastName: z.string().min(1, 'Last name is required'),
   email: z.string().email('Enter a valid email'),
   phone: z.string().min(10, 'Enter a valid phone number'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  // Backend PasswordPolicy: min 8 chars incl. a letter and a digit.
+  password: z.string().regex(/^(?=.*[A-Za-z])(?=.*\d).{8,}$/, 'At least 8 chars, incl. a letter and a digit'),
 });
 type Values = z.infer<typeof schema>;
 
 export default function SignupPage() {
-  const { register } = useAuth();
+  const { register, verifySignup } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get('redirect') || '/';
   const loginHref = redirectTo === '/' ? '/login' : `/login?redirect=${encodeURIComponent(redirectTo)}`;
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Email-verification second step: set once register returns a challenge.
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [otp, setOtp] = useState('');
+  const [verifying, setVerifying] = useState(false);
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -39,20 +46,68 @@ export default function SignupPage() {
   const onSubmit = async (values: Values) => {
     setFormError(null);
     try {
-      await register(values); // auto-logs in on success
-      navigate(redirectTo, { replace: true }); // back to where the guest was (e.g. /checkout)
+      const result = await register(values);
+      if (result.verificationRequired && result.challengeId) {
+        setChallengeId(result.challengeId); // show the OTP step
+        return;
+      }
+      navigate(redirectTo, { replace: true });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string; detail?: string } }; message?: string };
       setFormError(e.response?.data?.message ?? e.response?.data?.detail ?? 'Could not create your account. Please try again.');
     }
   };
 
+  const onVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.length < 6) return;
+    setFormError(null);
+    setVerifying(true);
+    try {
+      await verifySignup(challengeId as string, otp);
+      navigate(redirectTo, { replace: true });
+    } catch {
+      setFormError('Invalid or expired code. Please try again.');
+      setOtp('');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  if (challengeId) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+        <Card data-testid="signup-verify-card">
+          <CardHeader>
+            <CardTitle>Verify your email</CardTitle>
+            <CardDescription>We emailed you a 6-digit code. Enter it to activate your account.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={onVerify} className="space-y-4">
+              <div className="flex justify-center">
+                <InputOTP maxLength={6} value={otp} onChange={setOtp} data-testid="signup-otp">
+                  <InputOTPGroup>
+                    {Array.from({ length: 6 }).map((_, i) => <InputOTPSlot key={i} index={i} />)}
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+              {formError && <p className="text-center text-sm font-medium text-destructive" data-testid="signup-verify-error">{formError}</p>}
+              <Button type="submit" className="w-full" disabled={verifying || otp.length < 6} data-testid="signup-verify-submit">
+                {verifying ? 'Verifying…' : 'Verify & continue'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
       <Card data-testid="signup-card">
         <CardHeader>
           <CardTitle>Create your account</CardTitle>
-          <CardDescription>Sign up with your details — you'll be logged in automatically.</CardDescription>
+          <CardDescription>Sign up with your details — we'll email a code to verify your account.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>

@@ -5,10 +5,12 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -37,6 +39,27 @@ public class User implements UserDetails {
 
     @Enumerated(EnumType.STRING)
     private Role role;
+
+    // Set true once the user verifies the OTP emailed at signup. Login is blocked until verified.
+    @Builder.Default
+    @ColumnDefault("false")
+    @Column(nullable = false)
+    private boolean emailVerified = false;
+
+    // ── Email-OTP two-factor auth (opt-in per user; otp* fields are server-internal) ──
+    // ColumnDefault backfills these NOT NULL columns when the schema is updated on an existing table.
+    @Builder.Default
+    @ColumnDefault("false")
+    @Column(nullable = false)
+    private boolean twoFactorEnabled = false;
+    /** BCrypt hash of the current login OTP (never store the plaintext code). */
+    private String otpCodeHash;
+    private Instant otpExpiresAt;
+    /** Failed verification attempts for the current code; the code is locked after the max. */
+    @Builder.Default
+    @ColumnDefault("0")
+    @Column(nullable = false)
+    private int otpAttempts = 0;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

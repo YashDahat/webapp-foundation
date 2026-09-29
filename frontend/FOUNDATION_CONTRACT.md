@@ -34,7 +34,8 @@ DERIVES from your page plan at build time** — every page you plan with a route
 public pages are wrapped in `SiteLayout`, admin pages in `AdminLayout`, and `/login` `/signup` `/cart`
 `/checkout` `/gallery` `/admin/media` are always present. Providers you discover are injected into the
 derived `AppProviders.tsx`. Just build your page components and give each a route in the plan — do NOT
-hand-write routing, `<BrowserRouter>`, or the provider tree anywhere.
+hand-write routing, `<BrowserRouter>`, or the provider tree anywhere. The global `<Toaster/>` is already
+mounted in this shell (see "Toasts & API feedback") — do not mount another.
 
 ## Auth — `@/hooks/useAuth`, `@/context/AuthContext`
 
@@ -44,15 +45,32 @@ useAuth(): {
   isAuthenticated: boolean;
   isLoading: boolean;                                     // NOT `loading`
   user: AuthUser | null;                                  // guard for null
-  login: (username: string, password: string) => Promise<void>;   // TWO string args; username = email OR phone
-  register: (details: RegisterRequest) => Promise<void>;          // ONE object arg; creates a USER + auto-logs in
+  login: (username: string, password: string) => Promise<LoginResult>;  // TWO string args; username = email OR phone
+  verifyTwoFactor: (challengeId: string, code: string) => Promise<void>;  // finishes 2FA login, persists JWT
+  verifySignup: (challengeId: string, code: string) => Promise<void>;     // finishes signup email-verification, persists JWT
+  enableTwoFactor: () => Promise<void>;                   // current user opts into email-OTP 2FA
+  disableTwoFactor: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;  // authenticated
+  register: (details: RegisterRequest) => Promise<LoginResult>;   // ONE object arg; creates an UNVERIFIED USER (returns a verification challenge)
   logout: () => void;
 }
 
-export interface AuthUser { username: string; role: string }  // role is "ADMIN" | "USER" (a string); import it from '@/context/AuthContext' — do NOT redeclare
+export interface AuthUser { username: string; role: string }  // role is "SUPER_ADMIN" | "ADMIN" | "USER" (a string); import it from '@/context/AuthContext' — do NOT redeclare
+export interface LoginResult { twoFactorRequired: boolean; verificationRequired: boolean; challengeId?: string }  // from '@/context/AuthContext'
 // RegisterRequest is imported from '@/types/auth':
 type RegisterRequest = { firstName: string; lastName: string; email: string; phone: string; password: string };
 ```
+
+**Signup + 2FA + reset (already wired in the PREBUILT Login/Signup/Account pages):**
+- `register()` creates an UNVERIFIED account and returns `{ verificationRequired: true, challengeId }` (a
+  6-digit OTP is emailed). Collect the code and call `verifySignup(challengeId, code)` to activate + persist the JWT.
+- `login()` returns `LoginResult`: `twoFactorRequired` → `verifyTwoFactor(challengeId, code)`;
+  `verificationRequired` (unverified account) → `verifySignup(...)`; otherwise already logged in.
+- Password: `changePassword(current, next)` (Account page); forgot/reset via `authService.forgotPassword(email)`
+  and `authService.resetPassword({ token, newPassword })` — prebuilt pages `/forgot-password`, `/reset-password`.
+- **Admin users** (SUPER_ADMIN/ADMIN): `import { userService } from '@/services/userService'` — `list()`,
+  `changeRole(id, role)`, `remove(id)` (SUPER_ADMIN only), `bulkUpload(file)`; page `/admin/users`. `RequireAdmin`
+  admits both ADMIN and SUPER_ADMIN.
 
 Gotchas (each was a real failure this run):
 - Use `isLoading`, **never** `loading`.
@@ -113,8 +131,113 @@ never send a user id/email; orders link by `Integer userId`).
 ```ts
 import apiClient from '@/api/client';   // default export; an axios instance
 // apiClient.get / .post / .put / .delete — baseURL is ''; the JWT Bearer token is attached automatically.
+// A response interceptor auto-toasts (toast.error) on ANY failed request — see "Toasts & API feedback".
 ```
 Do not create another axios instance and do not manually set the Authorization header.
+
+## Toasts & API feedback
+
+Toasts are **global** and mounted once at the app root (`<Toaster/>` in the fenced `App.tsx`) — never
+mount another `<Toaster/>`. `import { toast } from 'sonner'` for ad-hoc toasts.
+
+```ts
+import { withToast } from '@/lib/apiToast';
+// Success feedback on a mutation — wraps the call, shows ONE toast.success on resolve:
+await withToast(fooService.save(payload), 'Saved');   // errors already toasted by the interceptor
+```
+
+**Rule — every API call surfaces a toast.**
+- **Failures auto-toast.** The `apiClient` response interceptor shows a single `toast.error` for any
+  failed request. Do **NOT** add manual `toast.error` after a caught request error — it double-toasts.
+- **Successes on mutations** use `withToast(promise, 'message')`. Reads (list/detail queries) don't toast.
+
+## Support — `@/services/supportService`, `@/hooks/supportHooks`
+
+Threaded customer support ships PREBUILT (customer page `/support` gated `AUTH`; admin helpdesk
+`/admin/support` gated `ADMIN`). Do NOT rebuild the service/hooks/types or re-declare the endpoints.
+
+```ts
+import { supportService } from '@/services/supportService';
+import { useMyCases, useSupportThread, useOpenCase, usePostMessage,
+         useAllSupportCases, useAdminSupportThread, useAdminReply } from '@/hooks/supportHooks';
+import type { SupportCaseDto, SupportThreadDto, SupportMessageDto,
+              SupportStatus, SupportAuthor } from '@/types/support';
+
+// Customer: useMyCases() · useSupportThread(id) · useOpenCase() · usePostMessage(caseId)
+// Admin:    useAllSupportCases() · useAdminSupportThread(id) · useAdminReply(caseId)
+// Mutations already wrap withToast; failures auto-toast via the interceptor.
+
+type SupportStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+type SupportAuthor = 'CUSTOMER' | 'STAFF';
+interface SupportCaseDto   { id: number; userId: number; customerName: string | null; customerEmail: string | null;
+                             subject: string; status: SupportStatus; createdAt: string; updatedAt: string }
+interface SupportMessageDto{ id: number; caseId: number; author: SupportAuthor; body: string; attachments: string[]; createdAt: string }
+interface SupportThreadDto { supportCase: SupportCaseDto; messages: SupportMessageDto[] }
+// Requests accept optional attachments (image URLs): open({subject,message,attachments?}),
+// reply({body,attachments?}), adminReply({body,status?,attachments?}).
+```
+
+**Image attachments:** messages can include images. Upload files with
+`supportService.uploadAttachment(file) → MediaAssetDto` (works for customers too — NOT the admin
+`/admin/media`), collect the returned `url`s, and pass them as `attachments`. The prebuilt UI uses
+`@/components/support/SupportAttachmentInput` (`{ SupportAttachmentInput, SupportAttachmentThumbs }`) —
+customers can't use the admin `MultiImagePicker`, so use this upload-only control on support pages.
+
+The admin detail panel `@/components/admin/support/SupportThreadPanel` renders a thread + status dropdown
++ reply box; `pages/admin/AdminSupportPage` lists cases in an `AdminDataGrid`.
+
+## Bulk upload — `@/components/admin/BulkUploadDialog` (ADMIN ONLY, COMPULSORY)
+
+**Every admin entity list page MUST include a `BulkUploadDialog`** (paired with the backend
+`POST /api/v1/admin/<resource>/bulk-upload`). The dialog downloads a CSV template, accepts a
+`.csv`/`.xlsx` file, calls the injected `onUpload` fn, and renders the `BulkUploadResult` summary.
+
+```tsx
+import { BulkUploadDialog } from '@/components/admin/BulkUploadDialog';
+import type { BulkUploadResult } from '@/types/bulkUpload';
+
+<BulkUploadDialog
+  title="Bulk upload products"
+  columns={['name', 'price', 'stock']}         // template headers (match backend expected keys)
+  sampleRow={['Widget', '199', '10']}          // optional example row in the template
+  templateName="products-template.csv"
+  onUpload={(file) => productService.bulkUpload(file)}   // returns Promise<BulkUploadResult>
+/>
+
+interface BulkUploadResult { created: number; skipped: number; failed: number;
+                             errors: { row: number; message: string }[] }
+```
+
+Failed uploads auto-toast via the apiClient interceptor; the dialog toasts the success/partial summary
+(don't add your own `toast.error`). Send the file as multipart `file` (`FormData`) in your service call.
+
+## Admin data grid — `@/components/admin/AdminDataGrid` (ADMIN ONLY)
+
+**All admin tables use `AdminDataGrid` (ag-grid).** ag-grid is **admin-only** — do NOT use it on public
+pages (keep shadcn `Table` / native there). Pass columns as ag-grid `ColDef[]`; row actions collapse
+into a right-pinned kebab (⋮) menu. Floating text filters, sorting, and pagination (`[10,20,50]`) are on
+by default.
+
+```tsx
+import { AdminDataGrid } from '@/components/admin/AdminDataGrid';
+import { type RowAction } from '@/components/admin/RowActionsCell';
+import type { ColDef } from 'ag-grid-community';   // column defs
+// import type { CustomCellRendererProps } from 'ag-grid-react';   // for custom cellRenderer components
+
+<AdminDataGrid<Foo>
+  rowData={foos}
+  columnDefs={[{ field: 'name', headerName: 'Name' }, { field: 'price' }] as ColDef<Foo>[]}
+  actions={[
+    { label: 'Edit', onClick: (row) => openEdit(row) },
+    { label: 'Delete', danger: true, onClick: (row) => remove(row), hidden: (row) => row.locked },
+  ] as RowAction<Foo>[]}
+  pagination pageSize={10} emptyMessage="No records found."
+/>
+
+interface RowAction<T> { label: string; onClick: (row: T) => void; danger?: boolean; hidden?: (row: T) => boolean }
+// Props: rowData: T[]; columnDefs: ColDef<T>[]; actions?; pagination?=true; pageSize?=10;
+//        rowHeight?; height?='calc(100vh - 220px)'; emptyMessage?; testId?
+```
 
 ## Site shell — `@/shell`
 
@@ -175,6 +298,18 @@ type MediaAssetDto = { id: number; url: string; filename: string | null; content
                        section: 'WEBSITE'|'EVENT'|null; eventName: string | null; eventDate: string | null;
                        sortOrder: number | null; uploadedAt: string };   // url ready for <img src>
 ```
+
+**Admin image-picker components** (ADMIN forms only — never on public pages): don't hand-roll a file
+input; use these. They upload via the media library and hand back URL(s) for the form field.
+```tsx
+import ImagePicker from '@/components/admin/ImagePicker';           // single URL — replaces an "image URL" text field
+  <ImagePicker value={imageUrl} onChange={(url) => setImageUrl(url)} />   // value: string|null; onChange('' clears)
+import MultiImagePicker from '@/components/admin/MultiImagePicker';  // ordered string[] — multiple images per entity
+  <MultiImagePicker value={images} onChange={(next) => setImages(next)} />  // upload / pick from library / reorder / remove
+```
+Entity storing MANY images: keep an ordered `List<String> images` on the backend entity —
+`@ElementCollection @CollectionTable(name = "<entity>_images", joinColumns = @JoinColumn(name = "<entity>_id"))`
+`@OrderColumn(name = "image_order") @Column(name = "image_url")` — plus an optional `imageUrl` primary/thumbnail.
 
 ---
 

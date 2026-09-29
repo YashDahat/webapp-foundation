@@ -69,3 +69,17 @@ To add or change a foundation feature, in the **same commit**:
 The worker falls back to a built-in default only if this file is absent/malformed, so a drift between
 this file and the shipped code silently ships stale seam policy — treat it like the contract cards.
 Design of record: `docs/foundation-feature-manifest-plan.md` in `business-discovery`.
+
+## Foundation rules generated code MUST follow
+
+These are enforced conventions the foundation ships (details + signatures in the `FOUNDATION_CONTRACT.md`
+cards). Generated code inherits them; do not reinvent or bypass:
+
+- **Toasts are global.** `<Toaster/>` is mounted once in the fenced `App.tsx`. Failed API requests
+  auto-`toast.error` via the `apiClient` response interceptor — never add a manual `toast.error` after a
+  caught request error (double-toast). Wrap mutations in `withToast(promise, 'message')` for success.
+- **Admin tables use `AdminDataGrid` (ag-grid), admin-only.** All `/admin/**` data tables render via the
+  shared `AdminDataGrid`; public pages keep shadcn `Table`/native — do NOT use ag-grid on public pages.
+- **Bulk upload is compulsory on admin entity tables.** Every admin entity list page ships a
+  `BulkUploadDialog`, and every admin entity exposes `POST /api/v1/admin/<resource>/bulk-upload`
+  returning `BulkUploadResult` (parse files with the foundation `SpreadsheetParser`).

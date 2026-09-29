@@ -6,7 +6,7 @@
 // ApiContractCard picks this file up via the marker line above and feeds it to the LLM.
 
 /** Roles issued by the backend — com.webappfoundation.model.Role. */
-export type Role = 'ADMIN' | 'USER';
+export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
 
 /** Request body for POST /api/v1/auth/login — com.webappfoundation.dto.AuthRequest.
  *  `username` is the login identifier: email OR phone (India-first login). */
@@ -18,6 +18,37 @@ export interface AuthRequest {
 /** Response body for POST /api/v1/auth/login and /register — com.webappfoundation.dto.AuthResponse. */
 export interface AuthResponse {
   token: string;
+}
+
+/**
+ * Response body for POST /api/v1/auth/login — com.webappfoundation.dto.LoginResponse.
+ * Discriminated by `twoFactorRequired`: when false, `token` is set (logged in); when true, `token` is
+ * null and `challengeId` must be sent with the emailed code to /verify-2fa.
+ */
+export interface LoginResponse {
+  token: string | null;
+  twoFactorRequired: boolean;
+  /** True when the account's email isn't verified yet — finish via /verify-signup with the emailed code. */
+  verificationRequired: boolean;
+  challengeId: string | null;
+}
+
+/** Request body for POST /api/v1/auth/verify-2fa and /verify-signup — { challengeId, code }. */
+export interface VerifyTwoFactorRequest {
+  challengeId: string;
+  code: string;
+}
+
+/** POST /api/v1/auth/change-password (authenticated). */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/** POST /api/v1/auth/reset-password — token from the emailed link + new password. */
+export interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
 }
 
 /** Request body for POST /api/v1/auth/register — com.webappfoundation.dto.RegisterRequest.
