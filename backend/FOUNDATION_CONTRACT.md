@@ -267,6 +267,33 @@ class BulkUploadResult {                       // @Builder; returned by every bu
 `SpreadsheetParser` and `BulkUploadResult` are fenced — do NOT re-declare them. The per-entity
 `bulkImport` method + `/bulk-upload` endpoint are generated per project (entities are per-project).
 
+## Audit logging (user activity)
+
+Every request is auto-logged (an access line with a correlation `requestId`, IP, method, path, status,
+duration — `AuditLogFilter`). For **security-sensitive actions**, also record a domain audit event via
+`AuditService`: it writes to the durable `audit_log` table (the SQL source of truth) AND to structured
+JSON logs shipped to Loki/Grafana. `AuditService` **never throws** (an audit failure can't break the flow).
+
+```java
+class AuditService {
+  // Actor resolved from the security context (or guest):
+  void record(String action, String outcome, String targetType, String targetId, String detail);
+  // Explicit actor (flows where the principal isn't set, e.g. a failed login):
+  void recordActor(Integer userId, String actorEmail, String actorRole,
+                   String action, String outcome, String targetType, String targetId, String detail);
+}
+class AuditActions { /* LOGIN_SUCCESS, LOGIN_FAILURE, USER_DELETED, …; SUCCESS / FAILURE */ }
+class AuditEvent { Long id; Instant createdAt; Integer userId; String actorEmail; String actorRole;
+                   String action; String outcome; String targetType; String targetId;
+                   String ipAddress; String requestId; String detail; }   // table "audit_log"
+```
+
+**Rules:** inject `AuditService` and record an event for any privileged/sensitive action your code adds
+(create/update/delete of important entities, permission changes, exports). Use your own action string if
+needed. **NEVER put secrets in an audit event** — no passwords, tokens, OTP codes, or full card/PII data.
+Admins read the log at `GET /api/v1/admin/audit(?action=&actorEmail=&limit=)` (→ `AuditEventDto`).
+Do NOT re-declare `AuditService`, `AuditEvent`, `AuditLogFilter`, or `AdminAuditController`.
+
 ## Shared exceptions
 
 ```java

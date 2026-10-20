@@ -186,6 +186,22 @@ customers can't use the admin `MultiImagePicker`, so use this upload-only contro
 The admin detail panel `@/components/admin/support/SupportThreadPanel` renders a thread + status dropdown
 + reply box; `pages/admin/AdminSupportPage` lists cases in an `AdminDataGrid`.
 
+## Admin logs — `@/services/auditService` (ADMIN ONLY, read-only)
+
+User-activity audit logging ships PREBUILT. Admins view it at `/admin/logs` (an `AdminDataGrid` over the
+`audit_log` table). The backend auto-records auth + admin actions; do NOT rebuild the service/page.
+
+```ts
+import { auditService } from '@/services/auditService';
+import type { AuditEventDto } from '@/types/audit';
+auditService.list({ action?, actorEmail?, limit? }): Promise<AuditEventDto[]>   // GET /api/v1/admin/audit
+interface AuditEventDto { id: number; createdAt: string; userId: number | null; actorEmail: string | null;
+  actorRole: string | null; action: string; outcome: string | null; targetType: string | null;
+  targetId: string | null; ipAddress: string | null; requestId: string | null; detail: string | null }
+```
+
+Operational dashboards live in **Grafana** (`http://localhost:3000`, Loki datasource) — not in the app.
+
 ## Bulk upload — `@/components/admin/BulkUploadDialog` (ADMIN ONLY, COMPULSORY)
 
 **Every admin entity list page MUST include a `BulkUploadDialog`** (paired with the backend

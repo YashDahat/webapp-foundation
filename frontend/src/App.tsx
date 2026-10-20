@@ -18,6 +18,7 @@ import ResetPasswordPage from '@/pages/ResetPasswordPage'
 import AdminMediaPage from '@/pages/admin/AdminMediaPage'
 import AdminSupportPage from '@/pages/admin/AdminSupportPage'
 import AdminUsersPage from '@/pages/admin/AdminUsersPage'
+import AdminLogsPage from '@/pages/admin/AdminLogsPage'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/RequireAdmin'
 import AdminLayout from '@/components/AdminLayout'
@@ -67,6 +68,7 @@ export default function App() {
                 <Route path="media" element={<AdminMediaPage />} />
                 <Route path="support" element={<AdminSupportPage />} />
                 <Route path="users" element={<AdminUsersPage />} />
+                <Route path="logs" element={<AdminLogsPage />} />
               </Route>
             </Routes>
           </BrowserRouter>

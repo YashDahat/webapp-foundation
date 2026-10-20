@@ -13,6 +13,8 @@ import com.webappfoundation.model.User;
 import com.webappfoundation.repository.UserRepository;
 import com.webappfoundation.security.CurrentUser;
 import com.webappfoundation.security.PasswordPolicy;
+import com.webappfoundation.service.AuditActions;
+import com.webappfoundation.service.AuditService;
 import com.webappfoundation.service.EmailService;
 import com.webappfoundation.service.OtpService;
 import com.webappfoundation.service.UserService;
@@ -49,13 +51,14 @@ public class AuthController {
     private final OtpService otpService;
     private final PasswordPolicy passwordPolicy;
     private final EmailService emailService;
+    private final AuditService auditService;
 
     @Value("${app.base-url:http://localhost:8080}")
     private String appBaseUrl;
 
     public AuthController(AuthenticationManager authenticationManager, JwtUtil jwtUtil, UserService userService,
                           UserRepository userRepository, PasswordEncoder passwordEncoder, OtpService otpService,
-                          PasswordPolicy passwordPolicy, EmailService emailService) {
+                          PasswordPolicy passwordPolicy, EmailService emailService, AuditService auditService) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userService = userService;
@@ -64,6 +67,7 @@ public class AuthController {
         this.otpService = otpService;
         this.passwordPolicy = passwordPolicy;
         this.emailService = emailService;
+        this.auditService = auditService;
     }
 
     /**
@@ -73,9 +77,15 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody AuthRequest authRequest) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(authRequest.getUsername(), authRequest.getPassword())
-        );
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(authRequest.getUsername(), authRequest.getPassword())
+            );
+        } catch (RuntimeException e) {
+            auditService.recordActor(null, authRequest.getUsername(), null, AuditActions.LOGIN_FAILURE,
+                    AuditActions.FAILURE, "USER", authRequest.getUsername(), "bad credentials");
+            throw e;
+        }
         final User user = (User) userService.loadUserByUsername(authRequest.getUsername());
 
         if (!user.isEmailVerified()) {
@@ -92,6 +102,8 @@ public class AuthController {
                     .challengeId(challengeToken(user, TWO_FACTOR_STAGE))
                     .build());
         }
+        auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.LOGIN_SUCCESS,
+                AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
         return ResponseEntity.ok(LoginResponse.builder().token(jwtUtil.generateToken(user)).build());
     }
 
@@ -100,8 +112,12 @@ public class AuthController {
     public ResponseEntity<AuthResponse> verifyTwoFactor(@RequestBody VerifyTwoFactorRequest request) {
         User user = (User) userService.loadUserByUsername(challengeUsername(request.getChallengeId(), TWO_FACTOR_STAGE));
         if (!otpService.verify(user, request.getCode())) {
+            auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.LOGIN_FAILURE,
+                    AuditActions.FAILURE, "USER", String.valueOf(user.getId()), "bad 2FA code");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired verification code.");
         }
+        auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.TWO_FACTOR_VERIFIED,
+                AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
         return ResponseEntity.ok(new AuthResponse(jwtUtil.generateToken(user)));
     }
 
@@ -114,6 +130,8 @@ public class AuthController {
         }
         user.setEmailVerified(true);
         userRepository.save(user);
+        auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.SIGNUP_VERIFIED,
+                AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
         return ResponseEntity.ok(new AuthResponse(jwtUtil.generateToken(user)));
     }
 
@@ -156,6 +174,8 @@ public class AuthController {
                 .emailVerified(false)
                 .build());
         otpService.issue(user);
+        auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.REGISTER,
+                AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), "awaiting email verification");
         return ResponseEntity.status(HttpStatus.CREATED).body(LoginResponse.builder()
                 .verificationRequired(true)
                 .challengeId(challengeToken(user, VERIFY_STAGE))
@@ -173,6 +193,7 @@ public class AuthController {
         passwordPolicy.validate(request.getNewPassword());
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        auditService.record(AuditActions.PASSWORD_CHANGED, AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
         return ResponseEntity.ok().build();
     }
 
@@ -187,6 +208,8 @@ public class AuthController {
                 String token = challengeToken(user, RESET_STAGE);
                 String link = appBaseUrl + "/reset-password?token=" + token;
                 emailService.sendHtml(user.getEmail(), "Reset your password", resetHtml(link));
+                auditService.recordActor(user.getId(), user.getEmail(), roleName(user),
+                        AuditActions.PASSWORD_RESET_REQUESTED, AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
             });
         }
         return ResponseEntity.ok().build();
@@ -199,6 +222,8 @@ public class AuthController {
         passwordPolicy.validate(request.getNewPassword());
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.PASSWORD_RESET,
+                AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
         return ResponseEntity.ok().build();
     }
 
@@ -241,6 +266,12 @@ public class AuthController {
             user.setOtpAttempts(0);
         }
         userRepository.save(user);
+        auditService.record(enabled ? AuditActions.TWO_FACTOR_ENABLED : AuditActions.TWO_FACTOR_DISABLED,
+                AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
+    }
+
+    private static String roleName(User user) {
+        return user.getRole() == null ? null : user.getRole().name();
     }
 
     private String resetHtml(String link) {

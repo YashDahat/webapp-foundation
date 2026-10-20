@@ -233,6 +233,29 @@
       }
     },
     {
+      "id": "audit",
+      "core": true,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": ["admin/AdminAuditController.java"],
+        "packages": ["audit"],
+        "fenced": [
+          "AuditEvent", "AuditEventRepository", "AuditService", "AuditActions",
+          "AuditLogFilter", "AuditEventDto", "AdminAuditController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/services/auditservice", "/types/audit"],
+        "guards": [],
+        "fenced": ["auditService"],
+        "pages": [{ "key": "ADMIN_LOGS", "gate": "ADMIN", "nav": true }]
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
       "id": "toasts",
       "core": true,
       "requires": [],

@@ -48,6 +48,9 @@ services:
       interval: 10s
       retries: 5
     restart: unless-stopped
+  # Audit/activity logs are persisted to the Postgres `audit_log` table (the source of truth) and
+  # surfaced to admins at /admin/logs — no external observability stack required. AuditService also
+  # emits a structured JSON log line to stdout for anyone who wants to ship it elsewhere.
 volumes:
   pgdata:
   miniodata:

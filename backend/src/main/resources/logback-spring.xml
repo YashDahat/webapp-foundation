@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Structured JSON logging to stdout (via logstash-logback-encoder) so a collector (Grafana Alloy /
+  Promtail) can scrape container logs into Loki with queryable fields. MDC (requestId, ip) and
+  StructuredArguments (action, outcome, userId, …) emitted by AuditService/AuditLogFilter become JSON
+  fields. Every log line carries app="webapp-foundation".
+-->
+<configuration>
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"app":"webapp-foundation"}</customFields>
+            <fieldNames>
+                <timestamp>ts</timestamp>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="JSON"/>
+    </root>
+</configuration>

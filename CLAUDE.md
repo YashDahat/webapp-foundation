@@ -83,3 +83,7 @@ cards). Generated code inherits them; do not reinvent or bypass:
 - **Bulk upload is compulsory on admin entity tables.** Every admin entity list page ships a
   `BulkUploadDialog`, and every admin entity exposes `POST /api/v1/admin/<resource>/bulk-upload`
   returning `BulkUploadResult` (parse files with the foundation `SpreadsheetParser`).
+- **Audit security-sensitive actions.** Inject `AuditService` and `record(...)` an event for privileged
+  actions you add (create/update/**delete**, permission changes, exports). It persists to the `audit_log`
+  table + structured logs (→ Loki/Grafana). **Never** put secrets (passwords, tokens, OTPs, PII) in an
+  audit event or log line. Admins read activity at `/admin/logs`.

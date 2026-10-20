@@ -30,6 +30,7 @@ export default function AdminLayout() {
           <NavLink to="/admin/media" className={linkClass} data-testid="admin-nav-media">Media library</NavLink>
           <NavLink to="/admin/support" className={linkClass} data-testid="admin-nav-support">Support</NavLink>
           <NavLink to="/admin/users" className={linkClass} data-testid="admin-nav-users">Users</NavLink>
+          <NavLink to="/admin/logs" className={linkClass} data-testid="admin-nav-logs">Logs</NavLink>
         </aside>
         <main className="min-w-0 flex-1">
           <Outlet />
