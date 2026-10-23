@@ -5,18 +5,23 @@ import {
   AllCommunityModule,
   themeQuartz,
   colorSchemeDark,
+  colorSchemeLight,
   type ColDef,
 } from 'ag-grid-community';
+import { useTheme } from '@/components/theme/ThemeProvider';
 import { RowActionsCell, type RowAction } from './RowActionsCell';
 
 // Register all Community features once (v33+ requires explicit module registration).
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-// Dark theme to match the admin layout (which renders inside a `dark` container).
-const adminGridTheme = themeQuartz.withPart(colorSchemeDark).withParams({
+// Light/dark grid themes that track the app-wide theme (the admin layout follows the ThemeToggle).
+const adminGridThemeDark = themeQuartz.withPart(colorSchemeDark).withParams({
   backgroundColor: '#0b0b0c',
   headerBackgroundColor: '#151518',
   borderColor: 'rgba(255,255,255,0.08)',
+  fontFamily: 'inherit',
+});
+const adminGridThemeLight = themeQuartz.withPart(colorSchemeLight).withParams({
   fontFamily: 'inherit',
 });
 
@@ -50,6 +55,9 @@ export function AdminDataGrid<T>({
   emptyMessage = 'No records found.',
   testId,
 }: AdminDataGridProps<T>): React.JSX.Element {
+  const { resolvedTheme } = useTheme();
+  const gridTheme = resolvedTheme === 'dark' ? adminGridThemeDark : adminGridThemeLight;
+
   const cols = useMemo<ColDef<T>[]>(() => {
     const defs = [...columnDefs];
     if (actions && actions.length > 0) {
@@ -88,7 +96,7 @@ export function AdminDataGrid<T>({
   return (
     <div style={{ width: '100%', height, minHeight: 420 }} data-testid={testId}>
       <AgGridReact<T>
-        theme={adminGridTheme}
+        theme={gridTheme}
         rowData={rowData}
         columnDefs={cols}
         defaultColDef={defaultColDef}

@@ -16,11 +16,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { StepperSheet, type WizardStep } from '@/components/admin/StepperSheet';
 import { MoreHorizontal } from 'lucide-react';
 
 function formatSize(bytes: number | null): string {
@@ -76,6 +78,8 @@ export default function AdminMediaPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editItem, setEditItem] = useState<MediaAssetDto | null>(null);
   const [previewItem, setPreviewItem] = useState<MediaAssetDto | null>(null);
+  const [toDelete, setToDelete] = useState<MediaAssetDto | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // shared form fields (upload + edit)
   const [file, setFile] = useState<File | null>(null);
@@ -137,10 +141,12 @@ export default function AdminMediaPage() {
     catch { toast.error('Could not copy'); }
   };
 
-  const onDelete = async (item: MediaAssetDto) => {
-    if (!window.confirm('Delete this image?')) return;
-    try { await deleteMedia(item.id); toast.success('Deleted'); refresh(); }
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try { await deleteMedia(toDelete.id); toast.success('Deleted'); setToDelete(null); refresh(); }
     catch { toast.error('Delete failed'); }
+    finally { setDeleting(false); }
   };
 
   // Shared gallery-publishing controls for both dialogs.
@@ -181,6 +187,65 @@ export default function AdminMediaPage() {
       )}
     </div>
   );
+
+  const uploadSteps: WizardStep[] = [
+    {
+      id: 'image',
+      title: 'Image',
+      description: 'File & label',
+      error: !file,
+      complete: !!file,
+      content: (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="up-file">Image file</Label>
+            <FilePicker id="up-file" testId="media-file" buttonLabel="Choose file"
+                        emptyLabel="No file chosen" file={file} onSelect={setFile} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="up-label">Label</Label>
+            <Input id="up-label" value={label} data-testid="media-label"
+                   onChange={(e) => setLabel(e.target.value)} placeholder="Optional" />
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'gallery',
+      title: 'Gallery',
+      description: 'Publishing',
+      content: galleryControls,
+    },
+  ];
+
+  const editSteps: WizardStep[] = [
+    {
+      id: 'image',
+      title: 'Image',
+      description: 'File & label',
+      content: (
+        <>
+          {editItem && <img src={editItem.url} alt="" className="h-24 w-24 rounded object-cover" />}
+          <div className="space-y-2">
+            <Label htmlFor="ed-file">Replace file (optional)</Label>
+            <FilePicker id="ed-file" testId="media-edit-file" buttonLabel="Choose file"
+                        emptyLabel="Keep current image" file={file} onSelect={setFile} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ed-label">Label</Label>
+            <Input id="ed-label" value={label} data-testid="media-edit-label"
+                   onChange={(e) => setLabel(e.target.value)} />
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'gallery',
+      title: 'Gallery',
+      description: 'Publishing',
+      content: galleryControls,
+    },
+  ];
 
   return (
     <div className="space-y-6" data-testid="admin-media-page">
@@ -233,7 +298,7 @@ export default function AdminMediaPage() {
                       <DropdownMenuItem data-testid={`media-preview-${item.id}`} onClick={() => setPreviewItem(item)}>Preview</DropdownMenuItem>
                       <DropdownMenuItem data-testid={`media-edit-${item.id}`} onClick={() => openEdit(item)}>Update</DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem data-testid={`media-delete-${item.id}`} onClick={() => onDelete(item)}
+                      <DropdownMenuItem data-testid={`media-delete-${item.id}`} onClick={() => setToDelete(item)}
                                         className="text-destructive focus:text-destructive">Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -244,62 +309,30 @@ export default function AdminMediaPage() {
         </Table>
       )}
 
-      {/* Upload dialog */}
-      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent data-testid="media-upload-dialog">
-          <DialogHeader>
-            <DialogTitle>Upload image</DialogTitle>
-            <DialogDescription>Add an image to the media library.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="up-file">Image file</Label>
-              <FilePicker id="up-file" testId="media-file" buttonLabel="Choose file"
-                          emptyLabel="No file chosen" file={file} onSelect={setFile} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="up-label">Label</Label>
-              <Input id="up-label" value={label} data-testid="media-label"
-                     onChange={(e) => setLabel(e.target.value)} placeholder="Optional" />
-            </div>
-            {galleryControls}
-          </div>
-          <DialogFooter>
-            <Button onClick={submitUpload} disabled={busy} data-testid="media-upload-submit">
-              {busy ? 'Uploading…' : 'Upload'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Upload panel */}
+      <StepperSheet
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        title="Upload image"
+        description="Add an image to the media library."
+        steps={uploadSteps}
+        canSave={!!file}
+        saving={busy}
+        saveLabel="Upload"
+        onSave={submitUpload}
+      />
 
-      {/* Edit dialog */}
-      <Dialog open={editItem !== null} onOpenChange={(o) => !o && setEditItem(null)}>
-        <DialogContent data-testid="media-edit-dialog">
-          <DialogHeader>
-            <DialogTitle>Update image</DialogTitle>
-            <DialogDescription>Replace the image and/or edit its details and gallery publishing.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {editItem && <img src={editItem.url} alt="" className="h-24 w-24 rounded object-cover" />}
-            <div className="space-y-2">
-              <Label htmlFor="ed-file">Replace file (optional)</Label>
-              <FilePicker id="ed-file" testId="media-edit-file" buttonLabel="Choose file"
-                          emptyLabel="Keep current image" file={file} onSelect={setFile} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ed-label">Label</Label>
-              <Input id="ed-label" value={label} data-testid="media-edit-label"
-                     onChange={(e) => setLabel(e.target.value)} />
-            </div>
-            {galleryControls}
-          </div>
-          <DialogFooter>
-            <Button onClick={submitEdit} disabled={busy} data-testid="media-edit-submit">
-              {busy ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit panel */}
+      <StepperSheet
+        open={editItem !== null}
+        onOpenChange={(o) => !o && setEditItem(null)}
+        title="Update image"
+        description="Replace the image and/or edit its details and gallery publishing."
+        steps={editSteps}
+        canSave
+        saving={busy}
+        onSave={submitEdit}
+      />
 
       {/* Preview dialog */}
       <Dialog open={previewItem !== null} onOpenChange={(o) => !o && setPreviewItem(null)}>
@@ -313,6 +346,18 @@ export default function AdminMediaPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={toDelete != null}
+        onOpenChange={() => setToDelete(null)}
+        title="Delete image?"
+        description={<>This will permanently delete “{toDelete?.label || toDelete?.filename || `#${toDelete?.id}`}”. This action cannot be undone.</>}
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        pending={deleting}
+        destructive
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

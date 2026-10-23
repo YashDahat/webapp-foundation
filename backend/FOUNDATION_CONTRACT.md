@@ -294,6 +294,219 @@ needed. **NEVER put secrets in an audit event** — no passwords, tokens, OTP co
 Admins read the log at `GET /api/v1/admin/audit(?action=&actorEmail=&limit=)` (→ `AuditEventDto`).
 Do NOT re-declare `AuditService`, `AuditEvent`, `AuditLogFilter`, or `AdminAuditController`.
 
+## Catalog & recommendations
+
+The commerce spine is **polymorphic**: everything sellable maps to one `CatalogItemDto` contract, referenced
+by `(itemType, itemId)`. The **framework** (`CatalogItemDto`, `CatalogItemResolver`, `CatalogService`,
+`RecommendationService`) is fenced; the concrete default `Product` / `CatalogRecommendation` entities are
+**batteries-included defaults** a project may extend. A new sellable type = ONE resolver bean, zero engine edits.
+
+```java
+// Universal "sellable" exchange shape — shared by cart, recommendations, and orders.
+class CatalogItemDto { String itemType; Long itemId; String name; String description; BigDecimal price;
+  String priceUnit; String imageUrl; List<String> images; String slug; String detailPath; String category;
+  boolean active; boolean cartable; String workflowCode; Map<String,Object> attributes; }
+
+// Per-business adapter — ONE @Component per sellable type. ProductCatalogResolver (itemType="PRODUCT") ships.
+interface CatalogItemResolver { String itemType(); List<CatalogItemDto> resolve(Collection<Long> ids); }  // active items only
+
+// Collects all resolver beans; unknown itemType → skipped (logged), never throws.
+class CatalogService {
+  boolean supports(String itemType);
+  List<CatalogItemDto> resolve(String itemType, Collection<Long> ids);
+  CatalogItemDto resolveOne(String itemType, Long itemId);          // null if no active match
+  List<CatalogItemDto> resolveMixed(Collection<ItemRef> refs);      // groups by type, fans out
+  record ItemRef(String itemType, Long itemId) {}                   // nested — the shared polymorphic ref
+}
+
+// Default sellable (extend/replace per project). branchScope GLOBAL (default) or SELECTED availableBranchIds;
+// stockTracked default false = unlimited; variants make it cartable=false (pick a size on the detail page).
+class Product { Long id; String name; String slug; String description; BigDecimal price;
+  BranchScope branchScope; Set<Long> availableBranchIds; boolean stockTracked; boolean stockPerBranch;
+  Integer stock; Integer reserved; List<ProductVariant> variants; String imageUrl; List<String> images;
+  List<String> features; String category; boolean active; String workflowCode; Instant createdAt; Instant updatedAt; }  // features = highlight bullets shown on the detail page
+enum BranchScope { GLOBAL, SELECTED }
+class ProductVariant { Long id; String label; String sku; BigDecimal price; boolean stockTracked; Integer stock; Integer reserved; }
+class BranchStock   { Long id; Long productId; Long variantId; Long branchId; Integer stock; Integer reserved; }  // unique (productId,variantId,branchId)
+class ProductDto    { /* admin/detail shape + computed `available`; variants each with computed `available` */ }
+class ProductService {
+  List<ProductDto> listActive(String category, String q, Long branchId);   // branchId → only items offered there
+  ProductDto getById(Long id); ProductDto getBySlug(String slug);          // ResourceNotFoundException on miss
+  ProductDto create(UpsertProductRequest); ProductDto update(Long, UpsertProductRequest); void delete(Long);
+  BulkUploadResult bulkImport(MultipartFile);   // columns: name,price,category,stockTracked,stock,workflowCode,branchSlugs
+}
+
+// Recommendations — referenced polymorphically by (itemType,itemId); score orders the results (desc).
+class CatalogRecommendation { Long id; String sourceItemType; Long sourceItemId; String targetItemType;
+  Long targetItemId; RecommendationType relationType; Double score; boolean active; Instant createdAt; Instant updatedAt; }  // unique (source*,target*,relationType)
+enum RecommendationType { UPSELL, CROSS_SELL }
+class RecommendationDto { /* admin view + resolved sourceItemName / targetItemName */ }
+class RecommendationService {
+  List<CatalogItemDto> getRecommendations(String itemType, Long itemId, RecommendationType type, Long branchId);  // score-ordered, branch-filtered
+  // + admin CRUD + bulkImport
+}
+```
+Endpoints — public: `GET /api/v1/products(?category=&q=&branchId=)`, `/products/{id}`, `/products/slug/{slug}`,
+`GET /api/v1/recommendations?itemType=&itemId=&type=&branchId=` (→ `CatalogItemDto[]`). Admin:
+`GET/POST/PUT/DELETE /api/v1/admin/products` + `/bulk-upload`; `/api/v1/admin/recommendations` CRUD + `/bulk-upload`.
+
+## Inventory
+
+Overselling is prevented by a per-type SPI; unlimited items are a no-op. Reserve/commit/release **only** via
+`InventoryService` — never decrement stock by hand. `ProductInventoryProvider` ships (`"PRODUCT"`).
+
+```java
+interface InventoryProvider {           // ONE @Component per itemType
+  String itemType();
+  boolean availableAt(Long itemId, Long branchId);
+  void reserve(Long itemId, String variantKey, Long branchId, int qty);   // atomic; 409 (CONFLICT) on shortfall — no oversell
+  void commit(Long itemId, String variantKey, Long branchId, int qty);
+  void release(Long itemId, String variantKey, Long branchId, int qty);
+}
+class InventoryService {                 // collects providers by itemType
+  boolean availableAt(String itemType, Long itemId, Long branchId);
+  void reserve/commit/release(String itemType, Long itemId, String variantKey, Long branchId, int qty);
+  boolean availableAll(List<OrderItem> items, Long branchId);              // the order spine's batch overloads
+  void reserveAll/commitAll/releaseAll(List<OrderItem> items, Long branchId);
+}
+```
+
+## Orders & checkout
+
+A persisted, batteries-included order spine — the connector anchor. Inject `OrderService`; never hardcode
+lifecycle steps or write your own order/checkout persistence. Re-priced server-side via `CatalogService`;
+one workflow per order (mixed-workflow carts → 409). Links to the payment spine by `referenceId` string.
+
+```java
+class Order { Long id; Integer userId; String orderNumber; String referenceId; Long branchId; String branchName;
+  FulfillmentType fulfillmentType; PaymentMode paymentMode; String workflowCode; String currentStageCode;
+  PaymentState paymentState; BigDecimal subtotal; BigDecimal total; BigDecimal refundAmount; String cancelReason;
+  String currency; Address shippingAddress; List<OrderItem> items; List<OrderAdjustment> adjustments;
+  Instant createdAt; Instant updatedAt; }                                  // table "orders"
+class OrderItem { Long id; String itemType; Long itemId; String variantKey; String variantLabel; String name; BigDecimal unitPrice; int quantity; String imageUrl; }
+class OrderAdjustment { String code; String label; BigDecimal amount; String connectorId; }   // embeddable
+class Address { String contactName; String phone; String line1; String line2; String city; String state; String pincode; Double latitude; Double longitude; }  // embeddable snapshot (NOT a link)
+enum FulfillmentType { DELIVERY, SELF_PICKUP }
+enum PaymentMode { ONLINE, PAY_AT_COUNTER }          // PAY_AT_COUNTER only valid with SELF_PICKUP
+enum PaymentState { AWAITING_PAYMENT, PAID, FAILED, REFUND_PENDING, REFUNDED }
+
+class OrderService {
+  OrderDto placeOrder(Integer userId, PlaceOrderRequest req);    // re-price, reserve, one-workflow, branch+address snapshot
+  QuoteResponse quote(Integer userId, QuoteRequest req);
+  List<OrderDto> myOrders(Integer userId); OrderDto get(Integer userId, Long id);   // ownership-checked
+  List<OrderDto> all(); OrderDto getAdmin(Long id);
+  OrderDto advanceStage(Long id, String stageCode);              // admin, trigger=ADMIN
+  OrderDto markPaid(Long id);                                    // settle a pay-at-counter pickup
+  OrderDto cancel(Long orderId, Integer actingUserId, String reason, boolean adminOverride);  // stage-aware refund
+  BulkUploadResult bulkImport(MultipartFile);
+  // @TransactionalEventListener(AFTER_COMMIT) onPaymentCaptured(PaymentCapturedEvent): mark PAID, commit stock, advance to onPaidEntry (idempotent)
+  // @Scheduled sweepAbandonedReservations(): release AWAITING_PAYMENT holds past `inventory.reservation-ttl-minutes`
+}
+// DTOs
+class PlaceOrderRequest { List<CartLineInput> items; Long branchId; FulfillmentType fulfillmentType; PaymentMode paymentMode; Long addressId; Map<String,String> connectorSelections; }
+class CartLineInput    { String itemType; Long itemId; String variantKey; int quantity; }   // NO prices — re-priced server-side
+class QuoteRequest     { List<CartLineInput> items; Long branchId; FulfillmentType fulfillmentType; Long addressId; }
+class QuoteResponse    { BigDecimal subtotal; List<Option> options; class Option { String connectorId; String code; String label; BigDecimal amount; String detail; } }
+class OrderDto         { /* Order fields as DTOs + boolean cancellable; BigDecimal refundPreview; boolean feedbackSubmitted; PaymentOrderResponse payment (online awaiting payment only) */ }
+```
+Endpoints — customer (`@CurrentUser`): `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/{id}`,
+`POST /api/v1/orders/{id}/cancel`, `POST /api/v1/checkout/quote`. Admin: `GET /api/v1/admin/orders(/{id})`,
+`PUT /{id}/stage`, `POST /{id}/cancel`, `POST /{id}/mark-paid`, `POST /bulk-upload`.
+
+## Order workflow & connectors
+
+The order lifecycle is a **DB-configured workflow** of stages, each with 0..N **connector actions** bound to
+it — all editable at `/admin/workflow`, no engine edits. Attach external services (delivery, tax, refunds,
+notifications) as **connector beans**; never call a third-party API inline from domain code.
+
+```java
+class Workflow      { Long id; String code; String label; boolean isDefault; }    // seeded: "default", "food"
+class WorkflowStage { Long id; String workflowCode; String code; String label; int ordinal;
+  boolean initial; boolean onPaidEntry; boolean terminal;
+  boolean cancellable; RefundPolicy refundPolicy; Integer refundPercent; }         // unique (workflowCode, code)
+enum RefundPolicy { FULL, PARTIAL, NONE }
+class WorkflowBinding   { Long id; Long stageId; String connectorId; String actionCode; int ordinal; boolean enabled; Map<String,String> params; }  // keyed by stage ID, not code
+class WorkflowExecution { Long id; Long orderId; Long stageId; Long bindingId; String connectorId; String actionCode; ExecutionStatus status; String detail; Instant createdAt; Instant updatedAt; }  // dedupe ledger; unique (orderId,stageId,bindingId)
+enum ExecutionStatus { PENDING, SUCCESS, FAILED }
+enum TriggerType { SYSTEM, PAYMENT, WEBHOOK, ADMIN, RETRY }
+
+class WorkflowEngine { boolean advance(Order order, String toStageCode, TriggerType trigger); }  // idempotent for SYSTEM/PAYMENT/WEBHOOK
+class StageActionDispatcher { /* @Async @TransactionalEventListener(AFTER_COMMIT): fans a stage's enabled bindings to connectors; dedupes SUCCESS via WorkflowExecution */ }
+class WorkflowService { /* seeds default+food, enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow() */ }
+
+// Connector SPI — connector/
+enum ConnectorCategory { SHIPPING, TAX, DISCOUNT, PAYMENT, FULFILLMENT, NOTIFICATION, OTHER }
+interface OrderConnector   { String id(); String displayName(); ConnectorCategory category(); boolean enabled(); Set<ConnectorAction> actions(); }
+interface ActionConnector  extends OrderConnector { ConnectorResult execute(String actionCode, OrderStageContext ctx); }      // async, on stage entry
+interface QuoteConnector   extends OrderConnector { List<QuoteOption> quote(CheckoutContext ctx); }                            // checkout-time
+interface WebhookConnector extends OrderConnector { void handleWebhook(String payload, Map<String,String> headers); }         // inbound → may advance the stage
+class ConnectorRegistry { OrderConnector byId(String id); List<OrderConnector> all(); List<QuoteConnector> quoteConnectors(); List<ActionConnector> actionConnectors(); }
+// Context/result: OrderStageContext, CheckoutContext, OrderItemSnapshot, QuoteOption, ConnectorResult, ConnectorAction, ConnectorConfig.
+// Shipped connectors: EmailConnector (id="email": email.customer/email.store), DemoDeliveryConnector (id="delivery.demo": quote + delivery.initiate + webhook), DemoRefundConnector (id="refund.demo": refund.issue).
+```
+A new connector = ONE `@Component` implementing the relevant SPI(s) + declaring `actions()`; it then appears in
+`/admin/connectors` and the workflow builder automatically. Inbound: `POST /api/v1/connectors/{connectorId}/webhook`
+(public, per-connector verified). Admin: `GET/PUT /api/v1/admin/workflow(/{code})`, `GET/PUT /api/v1/admin/connectors(/{id})`.
+
+## Branches & address book
+
+```java
+class Branch { Long id; String name; String slug; String phone; String addressLine; String city; String state;
+  String pincode; Double latitude; Double longitude; String googleMapsUrl; String openingHours; boolean active; Instant createdAt; Instant updatedAt; }
+class BranchDto { /* Branch fields + Double distanceKm (set only via /nearest) */ }
+class BranchService { List<BranchDto> listActive(); List<BranchDto> nearest(double lat, double lng); BranchDto getBySlug(String); /* admin CRUD + bulkImport */ }
+
+// User address book — user-owned (Integer userId), NOT an admin entity (no bulk). Snapshotted onto Order.shippingAddress.
+class UserAddress { Long id; Integer userId; String label; String contactName; String phone; String line1; String line2;
+  String city; String state; String pincode; Double latitude; Double longitude; boolean isDefault; Instant createdAt; }
+class AddressService {
+  List<UserAddressDto> list(Integer userId);
+  UserAddressDto add/update/setDefault(...); void remove(Integer userId, Long id);
+  UserAddress requireOwned(Integer userId, Long id);     // ownership-checked; used by the order spine
+}
+```
+Endpoints — public: `GET /api/v1/branches`, `GET /api/v1/branches/nearest?lat=&lng=`, `GET /api/v1/branches/slug/{slug}`;
+admin `/api/v1/admin/branches` CRUD + `/bulk-upload`. Address book (auth, `@CurrentUser`): `GET/POST /api/v1/addresses`,
+`PUT/DELETE /api/v1/addresses/{id}`, `PUT /api/v1/addresses/{id}/default`.
+
+## Feedback
+
+A tiny post-checkout rating, one per order (submit-once). Admins read it at `/admin/feedback` (read-only, no bulk).
+
+```java
+class OrderFeedback { Long id; Long orderId; Integer userId; int rating; String comment; Instant createdAt; }  // unique orderId
+class OrderFeedbackDto { Long id; Long orderId; String orderNumber; int rating; String comment; Instant createdAt; }
+class CreateFeedbackRequest { int rating; String comment; }    // rating 1–5; comment optional
+class FeedbackService { OrderFeedbackDto submit(Integer userId, Long orderId, CreateFeedbackRequest req); List<OrderFeedbackDto> all(); }
+```
+Endpoints: `POST /api/v1/orders/{id}/feedback` (auth, ownership, submit-once → 409 if already submitted); admin
+read-only `GET /api/v1/admin/feedback`. `OrderDto.feedbackSubmitted` tells the UI when to show the form.
+
+## Product reviews
+
+A customer review of a product: 1–5 stars + optional comment. Any signed-in user may leave ONE review per
+product (submit is an **upsert** — they edit their own), delete their own, and read the public summary. Admins
+moderate (delete) at `/admin/reviews`. Distinct from post-checkout `OrderFeedback` (order-level, submit-once).
+
+```java
+class ProductReview { Long id; Long productId; Integer userId; String userName; int rating; String comment;
+  Instant createdAt; Instant updatedAt; }                                 // unique (productId, userId)
+class ProductReviewDto { Long id; Long productId; String productName; Integer userId; String userName;
+  int rating; String comment; Instant createdAt; boolean mine; }          // productName set only in the admin list; mine = caller's own
+class ProductReviewSummaryDto { double average; long count; Map<Integer,Long> distribution;    // star 1–5 → count
+  List<ProductReviewDto> reviews; ProductReviewDto myReview; }            // reviews newest-first; myReview null for guests / not-yet-reviewed
+class CreateProductReviewRequest { int rating; String comment; }          // rating 1–5; comment optional
+class ProductReviewService {
+  ProductReviewSummaryDto summary(Long productId, Integer userId);        // userId nullable (marks caller's own)
+  ProductReviewDto submit(Integer userId, Long productId, CreateProductReviewRequest req);   // upsert
+  void deleteOwn(Integer userId, Long productId);
+  List<ProductReviewDto> adminList(); void adminDelete(Long id);
+}
+```
+Endpoints — public read / auth write (`@CurrentUser`): `GET /api/v1/products/{productId}/reviews` (→ summary),
+`POST /api/v1/products/{productId}/reviews` (auth upsert), `DELETE /api/v1/products/{productId}/reviews/mine`
+(auth). Admin: `GET /api/v1/admin/reviews`, `DELETE /api/v1/admin/reviews/{id}` (read-only + delete, no bulk).
+
 ## Shared exceptions
 
 ```java
@@ -302,6 +515,9 @@ class ResourceNotFoundException extends RuntimeException {   // throw for 404s; 
   ResourceNotFoundException(String message, Throwable cause);
 }
 class PaymentGatewayException extends RuntimeException { PaymentGatewayException(String message); }
+// @RestControllerAdvice GlobalExceptionHandler → stable JSON { status, error, message, timestamp } so the frontend
+// apiClient toasts data.message. Maps ResourceNotFoundException→404, ResponseStatusException→its status+reason,
+// bean-validation→400; unexpected errors fall through to the default 500 (no message leak).
 ```
 
 ---
@@ -314,5 +530,20 @@ the support spine (`SupportController`, `AdminSupportController`, `SupportServic
 repositories/DTOs above), the bulk-upload helpers (`SpreadsheetParser`, `BulkUploadResult`),
 the media/gallery/storage spine (`MediaAsset`, `MediaAssetRepository`, `MediaAssetService`,
 `AdminMediaController`, `GalleryController`, `MediaController`, `GallerySection`, `GalleryItemDto`,
-`StorageService`, `MinioStorageService`, `S3Config`), or any auth/payment/media/support DTO listed above —
+`StorageService`, `MinioStorageService`, `S3Config`), the `GlobalExceptionHandler` (the shared
+`@RestControllerAdvice` error-body mapper), or any auth/payment/media/support DTO listed above —
 all fenced and wired.
+
+**Also do not re-declare the commerce spine** (all fenced): `CatalogItemDto`, `CatalogItemResolver`,
+`CatalogService`, `RecommendationService`; `InventoryProvider`, `InventoryService`; `OrderService`,
+`WorkflowEngine`, `StageActionDispatcher`, `WorkflowService`, `ConnectorRegistry` and the connector SPIs
+(`OrderConnector`/`ActionConnector`/`QuoteConnector`/`WebhookConnector`) + context/result types +
+`EmailConnector`/`DemoDeliveryConnector`/`DemoRefundConnector`; `BranchService`, `AddressService`,
+`FeedbackService`, `ProductReviewService`; and their controllers (`ProductController`, `AdminProductController`,
+`RecommendationController`, `AdminRecommendationController`, `OrderController`, `CheckoutController`,
+`AdminOrderController`, `AdminWorkflowController`, `AdminConnectorController`, `ConnectorWebhookController`,
+`BranchController`, `AdminBranchController`, `AddressController`, `AdminFeedbackController`,
+`ProductReviewController`, `AdminReviewController`). The concrete
+default entities — `Product`/`ProductVariant`/`BranchStock`, `CatalogRecommendation`, `Order`/`OrderItem`,
+`Branch`, `UserAddress`, `OrderFeedback`, `ProductReview`, and the workflow/connector config tables — are **batteries-included
+defaults** a project may extend; the framework above around them is not.

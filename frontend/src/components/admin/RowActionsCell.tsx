@@ -1,5 +1,5 @@
 import type { CustomCellRendererProps } from 'ag-grid-react';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,6 +12,8 @@ import {
 export interface RowAction<T = any> {
   label: string;
   onClick: (row: T) => void;
+  /** Optional leading icon (a lucide icon component). */
+  icon?: LucideIcon;
   /** Render in a destructive (red) style. */
   danger?: boolean;
   /** Hide this action for rows where it returns true. */
@@ -39,15 +41,19 @@ export function RowActionsCell(props: RowActionsParams): React.JSX.Element | nul
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {visible.map((a, i) => (
-            <DropdownMenuItem
-              key={i}
-              onClick={() => a.onClick(data)}
-              className={a.danger ? 'text-red-600 focus:text-red-600' : ''}
-            >
-              {a.label}
-            </DropdownMenuItem>
-          ))}
+          {visible.map((a, i) => {
+            const Icon = a.icon;
+            return (
+              <DropdownMenuItem
+                key={i}
+                onClick={() => a.onClick(data)}
+                className={a.danger ? 'text-red-600 focus:text-red-600' : ''}
+              >
+                {Icon ? <Icon className="mr-2 h-4 w-4" /> : null}
+                {a.label}
+              </DropdownMenuItem>
+            );
+          })}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

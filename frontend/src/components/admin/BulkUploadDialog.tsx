@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Stepper } from '@/components/admin/Stepper';
 import { Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import type { BulkUploadResult } from '@/types/bulkUpload';
@@ -16,7 +17,7 @@ import type { BulkUploadResult } from '@/types/bulkUpload';
 interface BulkUploadDialogProps {
   /** Trigger button label. */
   buttonLabel?: string;
-  /** Dialog title, e.g. "Bulk upload products". */
+  /** Panel title, e.g. "Bulk upload products". */
   title: string;
   /** Column headers for the downloadable template (first is usually the required key). */
   columns: string[];
@@ -29,8 +30,9 @@ interface BulkUploadDialogProps {
 }
 
 /**
- * Admin bulk-upload dialog: download a CSV template, pick a .csv/.xlsx file, upload it, and show the
- * BulkUploadResult summary (created/skipped/failed + per-row errors). Admin-only.
+ * Admin bulk-upload panel: a right-side Sheet with a 2-step stepper — (1) download a CSV template and
+ * pick a .csv/.xlsx file, (2) review the BulkUploadResult summary (created/skipped/failed + per-row
+ * errors). Admin-only.
  *
  * Foundation toast rule: request failures already auto-toast via the apiClient interceptor, so this
  * does NOT toast.error on a failed upload (that would double-toast); it surfaces the success/partial
@@ -45,12 +47,14 @@ export function BulkUploadDialog({
   onUpload,
 }: BulkUploadDialogProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<BulkUploadResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
+    setStep(0);
     setFile(null);
     setResult(null);
     setBusy(false);
@@ -58,6 +62,7 @@ export function BulkUploadDialog({
   };
 
   const handleOpenChange = (next: boolean) => {
+    if (busy) return;
     setOpen(next);
     if (!next) reset();
   };
@@ -83,6 +88,7 @@ export function BulkUploadDialog({
     try {
       const res = await onUpload(file);
       setResult(res);
+      setStep(1);
       if (res.failed > 0) {
         toast.warning(`Imported ${res.created}, skipped ${res.skipped}, ${res.failed} failed.`);
       } else {
@@ -95,6 +101,11 @@ export function BulkUploadDialog({
     }
   };
 
+  const steps = [
+    { id: 'file', title: 'Template & file', description: 'Download & choose', complete: !!file },
+    { id: 'review', title: 'Review', description: 'Import summary', complete: !!result },
+  ];
+
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)} data-testid="bulk-upload-open">
@@ -102,55 +113,82 @@ export function BulkUploadDialog({
         {buttonLabel}
       </Button>
 
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetContent
+          side="right"
+          className="flex w-full flex-col gap-0 p-0 sm:max-w-xl"
+          onInteractOutside={(e) => busy && e.preventDefault()}
+        >
+          <SheetHeader className="border-b p-6">
+            <SheetTitle>{title}</SheetTitle>
+            <SheetDescription>
               Upload a .xlsx or .csv file. Columns: {columns.join(', ')}. Existing names are skipped.
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
 
-          <div className="space-y-4 py-2">
-            <Button variant="secondary" size="sm" onClick={downloadTemplate} data-testid="bulk-upload-template">
-              <Download className="mr-2 h-4 w-4" />
-              Download template
-            </Button>
+          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+            <div className="shrink-0 border-b p-4 md:w-52 md:border-b-0 md:border-r">
+              <Stepper
+                steps={steps}
+                active={step}
+                onStepClick={(i) => { if (i === 0) setStep(0); else if (result) setStep(1); }}
+              />
+            </div>
 
-            <Input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx,.csv"
-              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
-              data-testid="bulk-upload-file"
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              {step === 0 ? (
+                <div className="space-y-4">
+                  <Button variant="secondary" size="sm" onClick={downloadTemplate} data-testid="bulk-upload-template">
+                    <Download className="mr-2 h-4 w-4" />
+                    Download template
+                  </Button>
 
-            {result && (
-              <div className="rounded-md border p-3 text-sm space-y-2" data-testid="bulk-upload-result">
-                <div className="flex gap-4 font-medium">
-                  <span className="text-green-600">Created: {result.created}</span>
-                  <span className="text-muted-foreground">Skipped: {result.skipped}</span>
-                  <span className={result.failed > 0 ? 'text-red-600' : 'text-muted-foreground'}>Failed: {result.failed}</span>
+                  <Input
+                    ref={inputRef}
+                    type="file"
+                    accept=".xlsx,.csv"
+                    onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
+                    data-testid="bulk-upload-file"
+                  />
                 </div>
-                {result.errors.length > 0 && (
-                  <ul className="max-h-40 overflow-y-auto list-disc list-inside text-red-600">
-                    {result.errors.map((e, i) => (
-                      <li key={i}>Row {e.row}: {e.message}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+              ) : (
+                result && (
+                  <div className="rounded-md border p-3 text-sm space-y-2" data-testid="bulk-upload-result">
+                    <div className="flex gap-4 font-medium">
+                      <span className="text-green-600 dark:text-green-400">Created: {result.created}</span>
+                      <span className="text-muted-foreground">Skipped: {result.skipped}</span>
+                      <span className={result.failed > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>Failed: {result.failed}</span>
+                    </div>
+                    {result.errors.length > 0 && (
+                      <ul className="max-h-60 overflow-y-auto list-disc list-inside text-red-600 dark:text-red-400">
+                        {result.errors.map((e, i) => (
+                          <li key={i}>Row {e.row}: {e.message}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )
+              )}
+            </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleOpenChange(false)}>Close</Button>
-            <Button onClick={handleUpload} disabled={busy || !file} data-testid="bulk-upload-submit">
-              {busy ? 'Uploading...' : 'Upload'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <SheetFooter className="flex-row items-center justify-between gap-2 border-t p-4 sm:justify-between">
+            {step === 0 ? (
+              <>
+                <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={busy}>Close</Button>
+                <Button onClick={handleUpload} disabled={busy || !file} data-testid="bulk-upload-submit">
+                  {busy ? 'Uploading...' : 'Upload'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={reset}>Upload another</Button>
+                <Button onClick={() => handleOpenChange(false)}>Close</Button>
+              </>
+            )}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

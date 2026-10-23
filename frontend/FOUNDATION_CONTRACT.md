@@ -19,7 +19,14 @@ them and, where noted, add your business content on top.
 | `/cart` | `pages/CartPage.tsx` | public | Cart view; header cart button links here. Build add-to-cart controls on your product pages. |
 | `/checkout` | `pages/CheckoutPage.tsx` | `RequireAuth` | Working final-step checkout (see Checkout section) — usable **as-is**. |
 | `/gallery` | `pages/GalleryPage.tsx` | public | Public gallery view over the media library. |
+| `/products` · `/products/:slug` | `pages/ProductsPage.tsx` · `ProductDetailPage.tsx` | public | Default catalog grid + detail (variants, special features, Similar/Frequently-bought widgets, product reviews). |
+| `/branches` | `pages/BranchesPage.tsx` | public | Outlet picker (also the header branch picker). |
+| `/orders` · `/orders/:id` | `pages/OrdersPage.tsx` · `OrderDetailPage.tsx` | `RequireAuth` | Order history + detail (cancel w/ refund preview, feedback form). |
 | `/admin/media` | `pages/admin/AdminMediaPage.tsx` | `RequireAdmin` | Media library admin. |
+| `/admin/products` · `/admin/recommendations` | — | `RequireAdmin` | Catalog + recommendation admin (grids + bulk upload). |
+| `/admin/orders` · `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | Order mgmt + the workflow builder (React Flow diagram) + connector toggles. |
+| `/admin/branches` · `/admin/feedback` | — | `RequireAdmin` | Branch admin (+ bulk) · read-only feedback grid. |
+| `/admin/reviews` | `pages/admin/AdminReviewsPage.tsx` | `RequireAdmin` | Product-review moderation grid (delete; no bulk). |
 
 `LoginPage`/`SignupPage`/`CartPage`/`GalleryPage`/`AdminMediaPage` are **fenced** — do not edit them.
 `CheckoutPage` is foundation-provided but **replaceable**: keep it as-is for a simple flow, or replace
@@ -244,15 +251,48 @@ import type { ColDef } from 'ag-grid-community';   // column defs
   rowData={foos}
   columnDefs={[{ field: 'name', headerName: 'Name' }, { field: 'price' }] as ColDef<Foo>[]}
   actions={[
-    { label: 'Edit', onClick: (row) => openEdit(row) },
-    { label: 'Delete', danger: true, onClick: (row) => remove(row), hidden: (row) => row.locked },
+    { label: 'Edit', icon: Pencil, onClick: (row) => openEdit(row) },
+    { label: 'Delete', icon: Trash2, danger: true, onClick: (row) => remove(row), hidden: (row) => row.locked },
   ] as RowAction<Foo>[]}
   pagination pageSize={10} emptyMessage="No records found."
 />
 
-interface RowAction<T> { label: string; onClick: (row: T) => void; danger?: boolean; hidden?: (row: T) => boolean }
+// icon is an optional lucide icon component shown before the action label in the (⋮) menu.
+interface RowAction<T> { label: string; onClick: (row: T) => void; icon?: LucideIcon; danger?: boolean; hidden?: (row: T) => boolean }
 // Props: rowData: T[]; columnDefs: ColDef<T>[]; actions?; pagination?=true; pageSize?=10;
 //        rowHeight?; height?='calc(100vh - 220px)'; emptyMessage?; testId?
+```
+
+## Admin form panel — `@/components/admin/StepperSheet` (ADMIN ONLY)
+
+**Admin create/edit forms render in a right-side `StepperSheet`, not a `Dialog`.** Split the form into
+logical steps; a vertical `Stepper` on the left navigates them (free navigation — any step is clickable).
+Keep your own form state (`useState`) and `canSave`/`onSave` as before — `StepperSheet` only owns the
+panel chrome + active-step switching. Build the step content from the same fields you'd put in a dialog.
+(Trivial single-field actions can use a plain `Sheet` instead of a stepper.)
+
+```tsx
+import { StepperSheet, type WizardStep } from '@/components/admin/StepperSheet';
+import { Stepper, type Step } from '@/components/admin/Stepper';   // the left rail, reusable on its own
+
+const steps: WizardStep[] = form ? [
+  { id: 'details', title: 'Details', description: 'Name & price',
+    error: form.name.trim() === '', complete: form.name.trim() !== '',
+    content: (<>/* fields for this step */</>) },
+  { id: 'media', title: 'Media', content: (<>/* … */</>) },
+] : [];
+
+<StepperSheet
+  open={form != null} onOpenChange={(next) => !next && setForm(null)}
+  title={form?.id == null ? 'New product' : `Edit — ${form?.name}`}
+  steps={steps} canSave={canSave} saving={saving} onSave={save}
+/>
+
+interface Step       { id: string; title: string; description?: string; complete?: boolean; error?: boolean }
+interface WizardStep extends Step { content: ReactNode }
+// StepperSheet props: open; onOpenChange; title; description?; steps: WizardStep[];
+//                     canSave; saving?; saveLabel?='Save'; onSave
+// Stepper props:      steps: Step[]; active: number; onStepClick: (i:number)=>void
 ```
 
 ## Site shell — `@/shell`
@@ -278,6 +318,28 @@ interface SiteFooterProps { brandName: string; tagline?: string | null; address?
 ```
 You must generate `src/config/siteConfig.ts` with `export const siteConfig: SiteConfig = { header, footer }`
 (named export — import it as `import { siteConfig } from '@/config/siteConfig'`).
+
+The header/footer colour props (`bgClass`/`textClass`/`hoverClass`/`accentClass`/`ctaClass`) default to
+semantic theme tokens (`bg-background` / `text-foreground` / `bg-card` / primary accent), so when omitted
+the shell follows the app-wide light/dark theme (see "Theming"). Set them to fixed colours
+(e.g. `'bg-gray-900'`, `'text-white'`) ONLY for a branded bar that must NOT flip with the theme.
+
+## Theming — light / dark (`@/components/theme/ThemeProvider`, `@/components/theme/ThemeToggle`)
+
+```ts
+import { ThemeProvider, useTheme } from '@/components/theme/ThemeProvider'; // ThemeProvider is mounted in App.tsx — do NOT mount again
+import { ThemeToggle } from '@/components/theme/ThemeToggle';               // Light/Dark/System switcher (already in SiteHeader + AdminLayout)
+
+const { theme, setTheme, resolvedTheme } = useTheme(); // theme: 'light'|'dark'|'system'; resolvedTheme: 'light'|'dark'
+```
+
+The whole app (public **and** admin) is light/dark themeable. `ThemeProvider` (next-themes) toggles the
+`dark` class on `<html>`, which drives the CSS-variable palettes in `src/index.css` (`:root` = light,
+`.dark` = dark); the choice persists in `localStorage` (`storageKey="theme"`, default `system`). **Build UI
+with semantic tokens** (`bg-background`, `text-foreground`, `bg-card`, `text-muted-foreground`,
+`bg-primary`, `border-border`, …) so it themes automatically. For unavoidable fixed colours (status
+badges, warning banners), add a `dark:` variant. Read/change the theme with `useTheme()`; drop
+`<ThemeToggle/>` anywhere you want a switcher. Admin is no longer forced-dark — it follows the toggle.
 
 ## Utils — `@/lib/utils`
 
@@ -327,6 +389,97 @@ Entity storing MANY images: keep an ordered `List<String> images` on the backend
 `@ElementCollection @CollectionTable(name = "<entity>_images", joinColumns = @JoinColumn(name = "<entity>_id"))`
 `@OrderColumn(name = "image_order") @Column(name = "image_url")` — plus an optional `imageUrl` primary/thumbnail.
 
+## Catalog, recommendations & cart binding — `@/types/catalog`, `@/services/productService`, `@/hooks/productHooks`
+
+The commerce spine ships PREBUILT (default `Product` catalog, polymorphic recommendations). Do NOT rebuild the
+services/hooks/types or re-declare endpoints. Everything sellable is a `CatalogItemDto` referenced by
+`(itemType, itemId)`; a cart line's id is the **composite `${itemType}:${itemId}`** (variants split by `variantKey`).
+
+```ts
+import { productService } from '@/services/productService';
+import { useProducts, useProduct, useProductBySlug, useAdminProducts,
+         useCreateProduct, useUpdateProduct, useDeleteProduct } from '@/hooks/productHooks';
+import type { ProductDto, ProductVariantDto, UpsertProductRequest, ProductFilter } from '@/types/product';
+// ProductDto/UpsertProductRequest carry `features?: string[]` — highlight bullets shown on the detail page.
+import type { CatalogItemDto } from '@/types/catalog';   // { itemType; itemId; name; price; imageUrl?; slug?; detailPath?; category?; active; cartable; workflowCode?; attributes? }
+
+import { recommendationService } from '@/services/recommendationService';
+import { useRecommendations, useAdminRecommendations,
+         useCreateRecommendation, useUpdateRecommendation, useDeleteRecommendation } from '@/hooks/recommendationHooks';
+import type { RecommendationType, RecommendationDto, UpsertRecommendationRequest } from '@/types/recommendation';
+
+// useProducts(filter?: { category?; q?; branchId? }) · useRecommendations(itemType, itemId, type, branchId?) (enabled when itemId != null)
+// The "Frequently bought together" (CROSS_SELL) / "Similar products" (UPSELL) widget (works on ANY sellable type):
+import RecommendationWidget from '@/components/recommendations/RecommendationWidget';
+<RecommendationWidget itemType="PRODUCT" itemId={product.id} type="CROSS_SELL" branchId={selectedBranchId ?? undefined} />
+```
+Cart add (composite id + metadata so lines merge across grid/detail/widget):
+`addItem({ id: \`${itemType}:${itemId}\`, name, unitPrice: price, imageUrl, variantKey, metadata: { itemType, itemId } })`.
+
+## Orders & checkout — `@/services/orderService`, `@/hooks/orderHooks`, `@/types/order`
+
+The order spine ships PREBUILT. **`CheckoutPage` is now the real connector-aware flow** (fulfilment selector,
+delivery quote via `POST /checkout/quote`, saved-address picker, Razorpay client flow); still replaceable, still
+driven by `useCart()`. Send **only** the cart + selections — identity is server-derived.
+
+```ts
+import { orderService } from '@/services/orderService';
+import { useMyOrders, useOrder, useCancelOrder,
+         useAdminOrders, useAdvanceStage, useAdminCancelOrder, useMarkPaid } from '@/hooks/orderHooks';
+import type { OrderDto, PlaceOrderRequest, CartLineInput, QuoteRequest, QuoteResponse,
+              FulfillmentType, PaymentMode, PaymentState } from '@/types/order';
+// PlaceOrderRequest { items: CartLineInput[]; branchId?; fulfillmentType; paymentMode; addressId?; connectorSelections? }
+// CartLineInput { itemType; itemId; variantKey?; quantity }  — NO prices (re-priced server-side)
+// OrderDto { ...; cancellable; refundPreview?; feedbackSubmitted; payment? /* Razorpay order when online+awaiting */ }
+import { loadRazorpay, openRazorpay } from '@/lib/razorpay';              // client checkout for an online order
+import { registerCheckoutConnector } from '@/connectors/registry';        // optional custom checkout-step UI per connector
+```
+Admin workflow/connectors: `import { workflowService, connectorService } from '@/services/workflowService'` +
+`useWorkflows/useReplaceWorkflow/useConnectors/useUpdateConnector` from `@/hooks/workflowHooks`
+(`WorkflowDto` boolean `isDefault` serializes as **`default`**). The workflow builder diagram uses `@xyflow/react`.
+
+## Branches & address book — `@/context/BranchContext`, `@/services/branchService`, `@/services/addressService`
+
+```ts
+import { useBranch } from '@/context/BranchContext';   // { branches; selectedBranch; selectedBranchId; selectBranch; loading }
+// <BranchProvider> is mounted at the app root (persists to localStorage; geolocation nearest auto-select).
+// Pass selectedBranchId to catalog/recommendation reads and PlaceOrderRequest.branchId.
+import { branchService } from '@/services/branchService';
+import { useBranches, useAdminBranches, useCreateBranch, useUpdateBranch, useDeleteBranch } from '@/hooks/branchHooks';
+import type { BranchDto, UpsertBranchRequest } from '@/types/branch';     // BranchDto has googleMapsUrl + distanceKm?
+import BranchPicker from '@/components/BranchPicker';                      // header outlet dropdown
+
+import { addressService } from '@/services/addressService';
+import { useAddresses, useAddAddress, useUpdateAddress, useDeleteAddress, useSetDefaultAddress } from '@/hooks/addressHooks';
+import type { UserAddressDto, UpsertAddressRequest } from '@/types/address';
+import AddressBook from '@/components/AddressBook';                        // account page saved-address manager
+```
+
+## Feedback — `@/services/feedbackService`, `@/hooks/feedbackHooks`
+
+```ts
+import { feedbackService } from '@/services/feedbackService';
+import { useSubmitFeedback, useAdminFeedback } from '@/hooks/feedbackHooks';
+import type { OrderFeedbackDto, CreateFeedbackRequest } from '@/types/feedback';
+import FeedbackForm from '@/components/FeedbackForm';                      // 1–5 stars + optional comment; render while !order.feedbackSubmitted
+```
+
+## Product reviews — `@/services/reviewService`, `@/hooks/reviewHooks`
+
+Product-level reviews (1–5 stars + comment) ship PREBUILT. Any signed-in user leaves ONE review per product
+(submit is an upsert), deletes their own, and reads the public summary; admins moderate at `/admin/reviews`.
+Distinct from post-checkout `FeedbackForm` (order-level). `ProductReviews` is already mounted at the bottom of
+the foundation `ProductDetailPage`.
+
+```ts
+import { reviewService } from '@/services/reviewService';
+import { useProductReviews, useSubmitReview, useDeleteMyReview,
+         useAdminReviews, useAdminDeleteReview } from '@/hooks/reviewHooks';
+import type { ProductReviewDto, ProductReviewSummaryDto, CreateProductReviewRequest } from '@/types/review';
+// ProductReviewSummaryDto { average; count; distribution: Record<number,number>; reviews: ProductReviewDto[]; myReview? }
+import ProductReviews from '@/components/reviews/ProductReviews';          // <ProductReviews productId={product.id} /> — summary + write/edit form + list
+```
+
 ---
 
 ## Pinned-library gotchas
@@ -334,3 +487,5 @@ Entity storing MANY images: keep an ordered `List<String> images` on the backend
 - **`react-day-picker` is v10** (used by the shadcn `<Calendar>` at `@/components/ui/calendar`).
   The legacy **`initialFocus` prop was removed** — do not pass it. Use `autoFocus` if you need it.
 - Toasts use **`sonner`**: `import { toast } from 'sonner'`.
+- **`@xyflow/react` (React Flow v12)** ships for the admin workflow diagram; import its CSS once where used
+  (`import '@xyflow/react/dist/style.css'`). Don't add a second graph library.

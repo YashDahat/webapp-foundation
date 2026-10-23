@@ -87,3 +87,24 @@ cards). Generated code inherits them; do not reinvent or bypass:
   actions you add (create/update/**delete**, permission changes, exports). It persists to the `audit_log`
   table + structured logs (→ Loki/Grafana). **Never** put secrets (passwords, tokens, OTPs, PII) in an
   audit event or log line. Admins read activity at `/admin/logs`.
+- **Sellables bind to the fenced `CatalogItemDto` / `CatalogItemResolver` contract.** Recommendations and
+  orders reference items polymorphically by `(itemType, itemId)`. A new sellable type (`Room`, `Membership`,
+  …) keeps its typed entity and adds ONE `@Component implements CatalogItemResolver` — never reimplement the
+  catalog, recommendation, order, or inventory engines. A batteries-included default `Product`
+  (`itemType="PRODUCT"`) already ships.
+- **Stock is opt-in per product** (`stockTracked`, default false = unlimited). Reserve/commit/release **only**
+  via the fenced `InventoryService` (a per-type `InventoryProvider` SPI) — never decrement stock by hand.
+- **Orders/checkout/fulfillment run on the fenced order spine.** Inject `OrderService`; the order lifecycle is
+  a DB-configured **workflow** of stages, each with 0..N **connector actions** — never hardcode lifecycle
+  steps or write your own order/checkout persistence. Orders carry a `fulfillmentType` (delivery / self-pickup;
+  pickup may be `PAY_AT_COUNTER`) and run through a selected **branch**. Cancellation/refund is a property of
+  the current workflow **stage** (`cancellable` + `refundPolicy`) — never add an ad-hoc cancel path.
+- **Attach external services via connectors.** Delivery, tax, loyalty, refunds, notifications, … are
+  **connector beans** (`ActionConnector`/`QuoteConnector`/`WebhookConnector`) bound to a stage at
+  `/admin/workflow`; never call a third-party API inline from domain code. Built-in email is the `email`
+  connector.
+- **Branches / address book / feedback.** Orders fulfil through a **branch** (outlet); the user **address
+  book** feeds checkout and is **snapshotted** onto the order (`Order.shippingAddress`, never a link);
+  post-checkout **feedback** is 1–5 stars + optional comment, one per order. Never reimplement `BranchService`,
+  `AddressService`, `FeedbackService`, or re-declare `OrderService`, `WorkflowEngine`, `StageActionDispatcher`,
+  `ConnectorRegistry`/the connector SPIs, `CatalogService`, or `InventoryService`.

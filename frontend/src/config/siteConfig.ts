@@ -7,13 +7,11 @@ const siteConfig: SiteConfig = {
   header: {
     brandName: 'My Business',
     logoUrl: null,
-    navLinks: [],
+    navLinks: [{ label: 'Products', href: '/products' }, { label: 'Orders', href: '/orders' }],
     ctaButton: null,
     showAuth: true,
-    bgClass: 'bg-gray-900',
-    textClass: 'text-white',
-    hoverClass: 'hover:text-blue-400',
-    ctaClass: 'bg-blue-500 text-white hover:bg-blue-600',
+    // Colour classes omitted → SiteHeader's token defaults apply, so the header follows the
+    // app-wide light/dark theme. Set bgClass/textClass/hoverClass/ctaClass for fixed brand colours.
   },
   footer: {
     brandName: 'My Business',
@@ -24,9 +22,7 @@ const siteConfig: SiteConfig = {
     openingHours: null,
     quickLinks: [],
     socialLinks: [],
-    bgClass: 'bg-gray-900',
-    textClass: 'text-gray-400',
-    accentClass: 'hover:text-blue-400',
+    // Colour classes omitted → SiteFooter's token defaults apply (theme-aware).
   },
 };
 

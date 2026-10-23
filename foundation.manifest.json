@@ -62,7 +62,7 @@
       "backend": {
         "controllers": [],
         "packages": ["exception"],
-        "fenced": ["ResourceNotFoundException"]
+        "fenced": ["ResourceNotFoundException", "PaymentGatewayException", "GlobalExceptionHandler"]
       },
       "frontend": {
         "modules": [],
@@ -222,9 +222,12 @@
         "fenced": []
       },
       "frontend": {
-        "modules": ["/components/admin/admindatagrid", "/components/admin/rowactionscell"],
+        "modules": [
+          "/components/admin/admindatagrid", "/components/admin/rowactionscell",
+          "/components/admin/stepper", "/components/admin/steppersheet"
+        ],
         "guards": [],
-        "fenced": ["AdminDataGrid", "RowActionsCell"],
+        "fenced": ["AdminDataGrid", "RowActionsCell", "Stepper", "StepperSheet"],
         "pages": []
       },
       "config": {
@@ -274,6 +277,202 @@
         "env": [],
         "compose": []
       }
+    },
+    {
+      "id": "theme",
+      "core": true,
+      "requires": [],
+      "backend": {
+        "controllers": [],
+        "packages": [],
+        "fenced": []
+      },
+      "frontend": {
+        "modules": ["/components/theme/"],
+        "guards": [],
+        "fenced": ["ThemeProvider", "ThemeToggle", "useTheme"],
+        "pages": []
+      },
+      "config": {
+        "env": [],
+        "compose": []
+      }
+    },
+    {
+      "id": "catalog",
+      "core": false,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": ["ProductController.java", "RecommendationController.java", "admin/AdminProductController.java", "admin/AdminRecommendationController.java"],
+        "packages": ["catalog"],
+        "fenced": [
+          "CatalogItemDto", "CatalogItemResolver", "CatalogService", "ProductCatalogResolver", "CatalogConstants",
+          "Product", "ProductVariant", "ProductDto", "ProductVariantDto", "UpsertProductRequest", "BranchScope",
+          "ProductRepository", "ProductVariantRepository", "ProductService",
+          "CatalogRecommendation", "RecommendationType", "RecommendationDto", "UpsertRecommendationRequest",
+          "CatalogRecommendationRepository", "RecommendationService",
+          "ProductController", "AdminProductController", "RecommendationController", "AdminRecommendationController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/types/catalog", "/types/product", "/types/recommendation", "/services/productservice", "/services/recommendationservice", "/hooks/producthooks", "/hooks/recommendationhooks", "/components/recommendations/"],
+        "guards": [],
+        "fenced": ["productService", "recommendationService", "RecommendationWidget"],
+        "pages": [
+          { "key": "PRODUCTS", "gate": "PUBLIC", "nav": true },
+          { "key": "PRODUCT_DETAIL", "gate": "PUBLIC", "nav": false },
+          { "key": "ADMIN_PRODUCTS", "gate": "ADMIN", "nav": true },
+          { "key": "ADMIN_RECOMMENDATIONS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "inventory",
+      "core": false,
+      "requires": ["catalog"],
+      "backend": {
+        "controllers": [],
+        "packages": ["inventory"],
+        "fenced": ["InventoryProvider", "InventoryService", "ProductInventoryProvider", "BranchStock", "BranchStockRepository"]
+      },
+      "frontend": { "modules": [], "guards": [], "fenced": [], "pages": [] },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "workflow-connectors",
+      "core": false,
+      "requires": ["email"],
+      "backend": {
+        "controllers": ["ConnectorWebhookController.java", "admin/AdminWorkflowController.java", "admin/AdminConnectorController.java"],
+        "packages": ["workflow", "connector"],
+        "fenced": [
+          "Workflow", "WorkflowStage", "WorkflowBinding", "WorkflowExecution", "RefundPolicy", "ExecutionStatus", "TriggerType",
+          "WorkflowRepository", "WorkflowStageRepository", "WorkflowBindingRepository", "WorkflowExecutionRepository",
+          "WorkflowEngine", "StageActionDispatcher", "WorkflowService", "OrderStageEnteredEvent",
+          "OrderConnector", "ActionConnector", "QuoteConnector", "WebhookConnector", "ConnectorRegistry",
+          "ConnectorCategory", "ConnectorAction", "ConnectorResult", "OrderStageContext", "CheckoutContext", "QuoteOption", "OrderItemSnapshot",
+          "ConnectorConfig", "ConnectorConfigRepository", "ConnectorConfigService", "ConnectorAdminService",
+          "EmailConnector", "DemoDeliveryConnector", "DemoRefundConnector",
+          "WorkflowDto", "ConnectorDto", "ConnectorUpdateRequest",
+          "ConnectorWebhookController", "AdminWorkflowController", "AdminConnectorController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/services/workflowservice", "/hooks/workflowhooks", "/components/admin/workflowdiagram"],
+        "guards": [],
+        "fenced": ["workflowService", "connectorService", "WorkflowDiagram"],
+        "pages": [
+          { "key": "ADMIN_WORKFLOW", "gate": "ADMIN", "nav": true },
+          { "key": "ADMIN_CONNECTORS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "orders",
+      "core": false,
+      "requires": ["catalog", "inventory", "payment", "workflow-connectors", "cart"],
+      "backend": {
+        "controllers": ["OrderController.java", "CheckoutController.java", "admin/AdminOrderController.java"],
+        "packages": [],
+        "fenced": [
+          "Order", "OrderItem", "OrderAdjustment", "Address", "FulfillmentType", "PaymentMode", "PaymentState",
+          "OrderRepository", "OrderService",
+          "PlaceOrderRequest", "CartLineInput", "QuoteRequest", "QuoteResponse", "OrderDto", "CancelOrderRequest", "AdvanceStageRequest",
+          "OrderController", "CheckoutController", "AdminOrderController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/types/order", "/services/orderservice", "/hooks/orderhooks", "/connectors/registry", "/lib/razorpay"],
+        "guards": [],
+        "fenced": ["orderService", "registerCheckoutConnector"],
+        "pages": [
+          { "key": "ORDERS", "gate": "AUTH", "nav": true },
+          { "key": "ORDER_DETAIL", "gate": "AUTH", "nav": false },
+          { "key": "ADMIN_ORDERS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "branches",
+      "core": false,
+      "requires": [],
+      "backend": {
+        "controllers": ["BranchController.java", "admin/AdminBranchController.java"],
+        "packages": [],
+        "fenced": ["Branch", "BranchRepository", "BranchService", "BranchDto", "UpsertBranchRequest", "BranchController", "AdminBranchController"]
+      },
+      "frontend": {
+        "modules": ["/types/branch", "/services/branchservice", "/hooks/branchhooks", "/context/branchcontext", "/components/branchpicker"],
+        "guards": ["BranchProvider"],
+        "fenced": ["branchService", "BranchContext", "useBranch", "BranchPicker"],
+        "pages": [
+          { "key": "BRANCHES", "gate": "PUBLIC", "nav": true },
+          { "key": "ADMIN_BRANCHES", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "addresses",
+      "core": false,
+      "requires": ["auth"],
+      "backend": {
+        "controllers": ["AddressController.java"],
+        "packages": [],
+        "fenced": ["UserAddress", "UserAddressRepository", "AddressService", "UserAddressDto", "UpsertAddressRequest", "AddressController"]
+      },
+      "frontend": {
+        "modules": ["/types/address", "/services/addressservice", "/hooks/addresshooks", "/components/addressbook"],
+        "guards": [],
+        "fenced": ["addressService", "AddressBook"],
+        "pages": []
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "feedback",
+      "core": false,
+      "requires": ["orders"],
+      "backend": {
+        "controllers": ["admin/AdminFeedbackController.java"],
+        "packages": [],
+        "fenced": ["OrderFeedback", "OrderFeedbackRepository", "FeedbackService", "OrderFeedbackDto", "CreateFeedbackRequest", "AdminFeedbackController"]
+      },
+      "frontend": {
+        "modules": ["/types/feedback", "/services/feedbackservice", "/hooks/feedbackhooks", "/components/feedbackform"],
+        "guards": [],
+        "fenced": ["feedbackService", "FeedbackForm"],
+        "pages": [
+          { "key": "ADMIN_FEEDBACK", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "reviews",
+      "core": false,
+      "requires": ["catalog", "auth"],
+      "backend": {
+        "controllers": ["ProductReviewController.java", "admin/AdminReviewController.java"],
+        "packages": [],
+        "fenced": [
+          "ProductReview", "ProductReviewRepository", "ProductReviewService",
+          "ProductReviewDto", "ProductReviewSummaryDto", "CreateProductReviewRequest",
+          "ProductReviewController", "AdminReviewController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/types/review", "/services/reviewservice", "/hooks/reviewhooks", "/components/reviews/"],
+        "guards": [],
+        "fenced": ["reviewService", "ProductReviews"],
+        "pages": [
+          { "key": "ADMIN_REVIEWS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
     }
   ]
 }

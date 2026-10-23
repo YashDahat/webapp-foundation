@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ShieldCheck, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColDef } from 'ag-grid-community';
 import { AdminDataGrid } from '@/components/admin/AdminDataGrid';
@@ -10,12 +11,13 @@ import { useAuth } from '@/context/AuthContext';
 import type { UserDto } from '@/types/user';
 import type { Role } from '@/types/auth';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const ROLES: Role[] = ['USER', 'ADMIN', 'SUPER_ADMIN'];
 
@@ -28,6 +30,7 @@ export default function AdminUsersPage() {
 
   const [editing, setEditing] = useState<UserDto | null>(null);
   const [role, setRole] = useState<Role>('USER');
+  const [toDelete, setToDelete] = useState<UserDto | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-users'] });
 
@@ -51,11 +54,12 @@ export default function AdminUsersPage() {
   ];
 
   const actions: RowAction<UserDto>[] = [
-    { label: 'Change role', onClick: (row) => { setEditing(row); setRole(row.role); } },
+    { label: 'Change role', icon: ShieldCheck, onClick: (row) => { setEditing(row); setRole(row.role); } },
     {
       label: 'Delete',
+      icon: Trash2,
       danger: true,
-      onClick: (row) => { if (confirm(`Delete ${row.email}?`)) remove.mutate(row.id); },
+      onClick: (row) => setToDelete(row),
       // Only the super admin can delete; never offer delete for a super admin or for yourself.
       hidden: (row) => !isSuperAdmin || row.role === 'SUPER_ADMIN' || row.email === user?.username,
     },
@@ -86,18 +90,21 @@ export default function AdminUsersPage() {
         />
       )}
 
-      <Dialog open={editing != null} onOpenChange={(next) => !next && setEditing(null)}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Change role — {editing?.email}</DialogTitle>
-          </DialogHeader>
-          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
+      <Sheet open={editing != null} onOpenChange={(next) => !next && setEditing(null)}>
+        <SheetContent side="right" className="flex flex-col">
+          <SheetHeader>
+            <SheetTitle>Change role</SheetTitle>
+            <SheetDescription>{editing?.email}</SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 py-4">
+            <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <SheetFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
             <Button
               disabled={changeRole.isPending || !editing || role === editing.role}
@@ -105,9 +112,21 @@ export default function AdminUsersPage() {
             >
               {changeRole.isPending ? 'Saving…' : 'Save'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <ConfirmDialog
+        open={toDelete != null}
+        onOpenChange={() => setToDelete(null)}
+        title="Delete user?"
+        description={<>This will permanently delete “{toDelete?.email}”. This action cannot be undone.</>}
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        pending={remove.isPending}
+        destructive
+        onConfirm={() => toDelete && remove.mutate(toDelete.id, { onSuccess: () => setToDelete(null) })}
+      />
     </div>
   );
 }

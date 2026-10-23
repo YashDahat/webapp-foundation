@@ -7,6 +7,8 @@ import { Menu, X, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/cart';
+import BranchPicker from '@/components/BranchPicker';
+import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import type { SiteHeaderProps } from './types';
 
 export default function SiteHeader({
@@ -16,10 +18,12 @@ export default function SiteHeader({
   ctaButton,
   showAuth = true,
   showCart = true,
-  bgClass = 'bg-gray-900',
-  textClass = 'text-white',
-  hoverClass = 'hover:text-yellow-400',
-  ctaClass = 'bg-yellow-400 text-gray-900 hover:bg-yellow-300',
+  // Defaults use semantic tokens so the header follows the light/dark theme. Pass brand colours
+  // to override (see SiteHeaderProps) — fixed colours won't flip with the theme.
+  bgClass = 'bg-background',
+  textClass = 'text-foreground',
+  hoverClass = 'hover:text-primary',
+  ctaClass = 'bg-primary text-primary-foreground hover:bg-primary/90',
 }: SiteHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isAuthenticated, logout } = useAuth();
@@ -36,7 +40,7 @@ export default function SiteHeader({
         {cartCount > 0 && (
           <span
             data-testid="cart-badge"
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold text-gray-900"
+            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
           >
             {cartCount}
           </span>
@@ -52,7 +56,7 @@ export default function SiteHeader({
   };
 
   return (
-    <header className={`${bgClass} ${textClass} py-4 px-4 sticky top-0 z-50 shadow-md`}>
+    <header className={`${bgClass} ${textClass} py-4 px-4 sticky top-0 z-50 border-b border-border shadow-md`}>
       <div className="max-w-7xl mx-auto flex items-center justify-between">
 
         {/* Brand */}
@@ -88,6 +92,8 @@ export default function SiteHeader({
 
         {/* Desktop right actions */}
         <div className="hidden md:flex items-center gap-3">
+          <ThemeToggle className={`${textClass} ${hoverClass}`} />
+          <BranchPicker className={`${textClass} ${hoverClass}`} />
           {ctaButton && (
             <Link to={ctaButton.href}>
               <Button className={`rounded-full px-6 font-semibold transition-colors duration-200 ${ctaClass}`}>
@@ -130,6 +136,7 @@ export default function SiteHeader({
 
         {/* Mobile right actions: cart stays visible in the top bar; hamburger opens the menu */}
         <div className="md:hidden flex items-center gap-1">
+          <ThemeToggle className={`${textClass} ${hoverClass}`} />
           {showCart && cartButton}
           <button
             type="button"
@@ -146,7 +153,7 @@ export default function SiteHeader({
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <nav className={`md:hidden mt-3 border-t border-white/10 pt-4 flex flex-col gap-4 px-4`}>
+        <nav className={`md:hidden mt-3 border-t border-border pt-4 flex flex-col gap-4 px-4`}>
           {navLinks.map(link =>
             link.external ? (
               <a
@@ -170,7 +177,7 @@ export default function SiteHeader({
               </Link>
             )
           )}
-          <div className="flex items-center gap-3 pt-2 border-t border-white/10">
+          <div className="flex items-center gap-3 pt-2 border-t border-border">
             {ctaButton && (
               <Link to={ctaButton.href} onClick={close} className="flex-1">
                 <Button className={`w-full rounded-full font-semibold ${ctaClass}`}>

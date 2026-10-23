@@ -28,14 +28,17 @@ export interface SiteHeaderProps {
   /** Show the cart button (icon + item-count badge, links to /cart). Default true. */
   showCart?: boolean;
 
-  // Design — supply Tailwind class strings; defaults to a dark theme
-  /** Header background. e.g. 'bg-gray-900', 'bg-white', 'bg-amber-900' */
+  // Design — supply Tailwind class strings. Defaults use semantic theme tokens
+  // (bg-background / text-foreground / primary accent) so the header follows the
+  // app-wide light/dark theme. Override with fixed brand colours only if you want a
+  // header that does NOT flip with the theme (e.g. 'bg-gray-900', 'text-white').
+  /** Header background. Default 'bg-background'. e.g. 'bg-gray-900', 'bg-amber-900' */
   bgClass?: string;
-  /** Primary text colour. e.g. 'text-white', 'text-gray-900' */
+  /** Primary text colour. Default 'text-foreground'. e.g. 'text-white' */
   textClass?: string;
-  /** Hover / accent colour for nav links. e.g. 'hover:text-yellow-400' */
+  /** Hover / accent colour for nav links. Default 'hover:text-primary'. */
   hoverClass?: string;
-  /** CTA button classes. e.g. 'bg-yellow-400 text-black hover:bg-yellow-300' */
+  /** CTA button classes. Default 'bg-primary text-primary-foreground hover:bg-primary/90'. */
   ctaClass?: string;
 }
 
@@ -52,12 +55,12 @@ export interface SiteFooterProps {
   quickLinks?: NavLink[];
   socialLinks?: SocialLink[];
 
-  // Design
-  /** Footer background. e.g. 'bg-gray-900', 'bg-slate-800' */
+  // Design — defaults use semantic theme tokens so the footer follows the light/dark theme.
+  /** Footer background. Default 'bg-card'. e.g. 'bg-gray-900', 'bg-slate-800' */
   bgClass?: string;
-  /** Body text colour. e.g. 'text-gray-400' */
+  /** Body text colour. Default 'text-muted-foreground'. e.g. 'text-gray-400' */
   textClass?: string;
-  /** Accent / hover colour for links. e.g. 'hover:text-yellow-400' */
+  /** Accent / hover colour for links. Default 'hover:text-primary'. */
   accentClass?: string;
 }
 

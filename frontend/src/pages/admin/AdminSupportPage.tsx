@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MessageSquare } from 'lucide-react';
 import type { ColDef } from 'ag-grid-community';
 import { AdminDataGrid } from '@/components/admin/AdminDataGrid';
 import { type RowAction } from '@/components/admin/RowActionsCell';
@@ -42,7 +43,7 @@ export default function AdminSupportPage() {
   ];
 
   const actions: RowAction<SupportCaseDto>[] = [
-    { label: 'Open thread', onClick: (row) => setOpenId(row.id) },
+    { label: 'Open thread', icon: MessageSquare, onClick: (row) => setOpenId(row.id) },
   ];
 
   return (
