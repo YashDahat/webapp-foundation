@@ -495,6 +495,41 @@ class RefundOrderRequest { BigDecimal amount; String reason; }     // null amoun
 A concurrent/stale board move (someone already moved the card) fails the `Order.@Version` check and surfaces as
 **409 Conflict** (`GlobalExceptionHandler` maps `OptimisticLockingFailureException`) so the UI can refresh.
 
+**Sprints** — time-boxed batches the board groups cards by, **per workflow** (branch is a filter within a sprint,
+not its own sprint). Orders join the workflow's `ACTIVE` sprint at `placeOrder` (`Order.sprintId`). Invariant:
+**at most one `ACTIVE` sprint per workflow**. On boot `SprintService.bootstrap()` (runs after workflow seeding)
+ensures each workflow has one active sprint and adopts orphan (null-`sprintId`) orders into it.
+
+```java
+enum SprintStatus { ACTIVE, CLOSED }
+
+class OrderSprint { Long id; String workflowCode; String name; LocalDate startsOn; LocalDate endsOn;
+  SprintStatus status; Instant createdAt; }                          // table "order_sprint"
+interface OrderSprintRepository extends JpaRepository<OrderSprint,Long> {
+  List<OrderSprint> findByWorkflowCodeOrderByCreatedAtDesc(String workflowCode);
+  Optional<OrderSprint> findFirstByWorkflowCodeAndStatusOrderByCreatedAtDesc(String workflowCode, SprintStatus status);
+  List<OrderSprint> findByWorkflowCodeAndStatus(String workflowCode, SprintStatus status); }
+
+class SprintService {
+  List<SprintDto> list(String workflowCode);
+  OrderSprint activeSprint(String workflowCode);                     // null if none
+  Long activeSprintId(String workflowCode);                          // for OrderService.placeOrder
+  SprintDto upsert(UpsertSprintRequest req);                         // id==null creates ACTIVE (409 if one already active); else edits name/dates
+  SprintDto complete(Long id, CompleteSprintRequest req);            // close current, open next, carry forward ticked open orders
+}
+
+// DTOs
+class SprintDto            { Long id; String workflowCode; String name; LocalDate startsOn; LocalDate endsOn; SprintStatus status; Instant createdAt; }
+class UpsertSprintRequest  { Long id; String workflowCode; String name; LocalDate startsOn; LocalDate endsOn; }
+class CompleteSprintRequest{ String nextName; LocalDate nextStartsOn; LocalDate nextEndsOn; List<Long> carryForwardOrderIds; }
+```
+Completing a sprint closes it (`CLOSED`), opens the next `ACTIVE` sprint, and re-points the ticked open (non-terminal)
+orders onto it (`Order.carriedForward=true`), keeping their stage/history/blocked state. Audited
+(`SPRINT_COMPLETED`, `ORDER_CARRIED_FORWARD`).
+
+**Admin sprint endpoints** (`/api/v1/admin/sprints`, ADMIN-only — not in the STAFF allowlist):
+`GET /sprints?workflowCode=`, `POST /sprints` (create), `PUT /sprints/{id}` (edit), `POST /sprints/{id}/complete`.
+
 ## Branches & address book
 
 ```java

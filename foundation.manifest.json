@@ -479,11 +479,13 @@
       "core": false,
       "requires": ["orders", "branches"],
       "backend": {
-        "controllers": [],
+        "controllers": ["admin/AdminSprintController.java"],
         "packages": [],
         "fenced": [
           "OrderStageEvent", "OrderStageEventRepository", "BlockReason",
-          "BlockOrderRequest", "AssignOrderRequest", "RefundOrderRequest", "WorkflowStageMappingRequest"
+          "BlockOrderRequest", "AssignOrderRequest", "RefundOrderRequest", "WorkflowStageMappingRequest",
+          "SprintStatus", "OrderSprint", "OrderSprintRepository", "SprintService",
+          "SprintDto", "UpsertSprintRequest", "CompleteSprintRequest", "AdminSprintController"
         ]
       },
       "frontend": { "modules": [], "guards": [], "fenced": [], "pages": [] },

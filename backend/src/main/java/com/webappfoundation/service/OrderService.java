@@ -82,6 +82,7 @@ public class OrderService {
     private final CatalogService catalogService;
     private final InventoryService inventoryService;
     private final WorkflowService workflowService;
+    private final SprintService sprintService;
     private final WorkflowEngine workflowEngine;
     private final ConnectorRegistry connectorRegistry;
     private final PaymentService paymentService;
@@ -102,7 +103,8 @@ public class OrderService {
 
     public OrderService(OrderRepository orderRepository, CatalogService catalogService,
                         InventoryService inventoryService, WorkflowService workflowService,
-                        WorkflowEngine workflowEngine, ConnectorRegistry connectorRegistry,
+                        SprintService sprintService, WorkflowEngine workflowEngine,
+                        ConnectorRegistry connectorRegistry,
                         PaymentService paymentService, BranchRepository branchRepository,
                         AddressService addressService, OrderFeedbackRepository feedbackRepository,
                         OrderStageEventRepository stageEventRepository, UserRepository userRepository,
@@ -112,6 +114,7 @@ public class OrderService {
         this.catalogService = catalogService;
         this.inventoryService = inventoryService;
         this.workflowService = workflowService;
+        this.sprintService = sprintService;
         this.workflowEngine = workflowEngine;
         this.connectorRegistry = connectorRegistry;
         this.paymentService = paymentService;
@@ -169,6 +172,7 @@ public class OrderService {
                 .workflowCode(workflowCode)
                 .currentStageCode(initial.getCode())
                 .stageEnteredAt(now)
+                .sprintId(sprintService.activeSprintId(workflowCode)) // join the workflow's active sprint (null if none)
                 .paymentState(PaymentState.AWAITING_PAYMENT)
                 .subtotal(cart.subtotal)
                 .total(total)

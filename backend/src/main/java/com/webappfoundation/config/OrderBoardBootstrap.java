@@ -13,7 +13,9 @@ import org.springframework.stereotype.Component;
  * can place every card. {@code blocked} / {@code carriedForward} default via their column definitions; the
  * only backfill needed here is {@code stageEnteredAt ← updatedAt} so time-in-stage is never null.
  *
- * <p>Sprint bootstrap (≤1 ACTIVE sprint per workflow, orphan adoption) is layered on by the sprint feature.
+ * <p>Sprint bootstrap (≤1 ACTIVE sprint per workflow, orphan adoption) lives in {@code SprintService.bootstrap()},
+ * which runs on {@code ApplicationReadyEvent} <em>after</em> workflow seeding (ordered) so a freshly seeded
+ * workflow gets its first active sprint.
  */
 @Component
 @Order(100)

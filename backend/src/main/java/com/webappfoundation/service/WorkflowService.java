@@ -70,6 +70,7 @@ public class WorkflowService {
     // ── Seeding ──
 
     @EventListener(ApplicationReadyEvent.class)
+    @org.springframework.core.annotation.Order(0) // seed workflows before SprintService.bootstrap (@Order 100) runs
     @Transactional
     public void seedDefaults() {
         if (workflowRepository.count() > 0) {
