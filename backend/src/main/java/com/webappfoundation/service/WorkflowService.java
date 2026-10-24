@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Owns workflow definitions: seeds the default + food workflows on first boot, enforces invariants, and
+ * Owns workflow definitions: seeds the default + food + retail + services workflows on first boot, enforces invariants, and
  * provides the stage lookups the order spine uses (initial / onPaidEntry / cancelled). Every lookup is
  * scoped by {@code workflowCode} → stage (never a bare code, which may repeat across workflows).
  */
@@ -76,20 +76,23 @@ public class WorkflowService {
         if (workflowRepository.count() > 0) {
             return;
         }
-        log.info("Seeding default + food workflows");
+        log.info("Seeding default + food + retail + services workflows");
         seedDefaultWorkflow();
         seedFoodWorkflow();
+        seedRetailWorkflow();
+        seedServicesWorkflow();
     }
 
     private void seedDefaultWorkflow() {
         workflowRepository.save(Workflow.builder().code(DEFAULT_CODE).label("Default").isDefault(true).build());
         // Every stage cancellable=FULL (e-commerce can cancel/return any time for a full refund).
         // PLACED (initial) is intentionally unbound — an online order fires nothing before payment.
-        stage(DEFAULT_CODE, "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null);
-        WorkflowStage confirmed = stage(DEFAULT_CODE, "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null);
-        WorkflowStage ofd = stage(DEFAULT_CODE, "OUT_FOR_DELIVERY", "Out for delivery", 2, false, false, false, true, RefundPolicy.FULL, null);
-        stage(DEFAULT_CODE, "DELIVERED", "Delivered", 3, false, false, true, true, RefundPolicy.FULL, null);
-        WorkflowStage cancelled = stage(DEFAULT_CODE, CANCELLED_CODE, "Cancelled", 4, false, false, true, false, RefundPolicy.NONE, null);
+        // targetMinutes drive the board's "stuck" flag (time-in-stage past target); terminal stages have none.
+        stage(DEFAULT_CODE, "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage confirmed = stage(DEFAULT_CODE, "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, 120);
+        WorkflowStage ofd = stage(DEFAULT_CODE, "OUT_FOR_DELIVERY", "Out for delivery", 2, false, false, false, true, RefundPolicy.FULL, null, 2880);
+        stage(DEFAULT_CODE, "DELIVERED", "Delivered", 3, false, false, true, true, RefundPolicy.FULL, null, null);
+        WorkflowStage cancelled = stage(DEFAULT_CODE, CANCELLED_CODE, "Cancelled", 4, false, false, true, false, RefundPolicy.NONE, null, null);
 
         // PLACED (initial) has NO bindings — an online order fires nothing before payment.
         bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
@@ -104,14 +107,16 @@ public class WorkflowService {
     }
 
     private void seedFoodWorkflow() {
-        workflowRepository.save(Workflow.builder().code("food").label("Food delivery").isDefault(false).build());
+        workflowRepository.save(Workflow.builder().code("food").label("Food delivery").isDefault(false)
+                .staffRole("Rider").build());
         // Cancellation tightens as it progresses: FULL → PARTIAL(50) → not cancellable once out for delivery.
-        stage("food", "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null);
-        WorkflowStage confirmed = stage("food", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null);
-        WorkflowStage preparing = stage("food", "PREPARING", "Preparing", 2, false, false, false, true, RefundPolicy.PARTIAL, 50);
-        WorkflowStage ofd = stage("food", "OUT_FOR_DELIVERY", "Out for delivery", 3, false, false, false, false, RefundPolicy.NONE, null);
-        stage("food", "DELIVERED", "Delivered", 4, false, false, true, false, RefundPolicy.NONE, null);
-        WorkflowStage cancelled = stage("food", CANCELLED_CODE, "Cancelled", 5, false, false, true, false, RefundPolicy.NONE, null);
+        // Tight time targets (minutes) suit a fast kitchen-to-door lifecycle.
+        stage("food", "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null, 5);
+        WorkflowStage confirmed = stage("food", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, 10);
+        WorkflowStage preparing = stage("food", "PREPARING", "Preparing", 2, false, false, false, true, RefundPolicy.PARTIAL, 50, 20);
+        WorkflowStage ofd = stage("food", "OUT_FOR_DELIVERY", "Out for delivery", 3, false, false, false, false, RefundPolicy.NONE, null, 30);
+        stage("food", "DELIVERED", "Delivered", 4, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("food", CANCELLED_CODE, "Cancelled", 5, false, false, true, false, RefundPolicy.NONE, null, null);
 
         bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
         bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
@@ -125,13 +130,54 @@ public class WorkflowService {
         validateInvariants("food");
     }
 
+    /** Buy-online / pick-up-in-store retail: a packer prepares the order, then the customer collects it. */
+    private void seedRetailWorkflow() {
+        workflowRepository.save(Workflow.builder().code("retail").label("Retail pickup").isDefault(false)
+                .staffRole("Packer").build());
+        stage("retail", "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage confirmed = stage("retail", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, 60);
+        WorkflowStage packing = stage("retail", "PACKING", "Packing", 2, false, false, false, true, RefundPolicy.PARTIAL, 50, 120);
+        WorkflowStage ready = stage("retail", "READY_FOR_PICKUP", "Ready for pickup", 3, false, false, false, true, RefundPolicy.PARTIAL, 50, 1440);
+        stage("retail", "COLLECTED", "Collected", 4, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("retail", CANCELLED_CODE, "Cancelled", 5, false, false, true, false, RefundPolicy.NONE, null, null);
+
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(packing, EmailConnector.ID, EmailConnector.EMAIL_STORE, 0);
+        bind(ready, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0); // "your order is ready to collect"
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
+        validateInvariants("retail");
+    }
+
+    /** Field / appointment services: request → scheduled → technician on the job → completed. */
+    private void seedServicesWorkflow() {
+        workflowRepository.save(Workflow.builder().code("services").label("Services").isDefault(false)
+                .staffRole("Technician").build());
+        stage("services", "REQUESTED", "Requested", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage scheduled = stage("services", "SCHEDULED", "Scheduled", 1, false, true, false, true, RefundPolicy.FULL, null, 60);
+        WorkflowStage inProgress = stage("services", "IN_PROGRESS", "In progress", 2, false, false, false, true, RefundPolicy.PARTIAL, 50, 120);
+        stage("services", "COMPLETED", "Completed", 3, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("services", CANCELLED_CODE, "Cancelled", 4, false, false, true, false, RefundPolicy.NONE, null, null);
+
+        bind(scheduled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(scheduled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(inProgress, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
+        validateInvariants("services");
+    }
+
     private WorkflowStage stage(String workflowCode, String code, String label, int ordinal, boolean initial,
                                 boolean onPaidEntry, boolean terminal, boolean cancellable,
-                                RefundPolicy refundPolicy, Integer refundPercent) {
+                                RefundPolicy refundPolicy, Integer refundPercent, Integer targetMinutes) {
         return stageRepository.save(WorkflowStage.builder()
                 .workflowCode(workflowCode).code(code).label(label).ordinal(ordinal)
                 .initial(initial).onPaidEntry(onPaidEntry).terminal(terminal)
                 .cancellable(cancellable).refundPolicy(refundPolicy).refundPercent(refundPercent)
+                .targetMinutes(targetMinutes)
                 .build());
     }
 

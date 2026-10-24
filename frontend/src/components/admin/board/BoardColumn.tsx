@@ -29,7 +29,7 @@ export default function BoardColumn({
       ref={setNodeRef}
       data-testid={`board-column-${key}`}
       className={cn(
-        'flex w-72 shrink-0 flex-col rounded-lg border bg-muted/30 transition-colors',
+        'flex h-full w-72 shrink-0 flex-col rounded-lg border bg-muted/30 transition-colors',
         dragActive && isValidTarget && 'border-primary/70 bg-primary/5',
         dragActive && !isValidTarget && 'opacity-40',
         isOver && isValidTarget && 'ring-2 ring-primary',
@@ -48,7 +48,7 @@ export default function BoardColumn({
         </span>
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-2" style={{ maxHeight: 'calc(100vh - 20rem)' }}>
+      <div className="flex-1 space-y-2 overflow-y-auto p-2">
         {column.cards.length === 0 ? (
           <p className="px-1 py-6 text-center text-xs text-muted-foreground">No orders.</p>
         ) : (

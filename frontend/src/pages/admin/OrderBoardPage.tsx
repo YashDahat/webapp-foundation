@@ -311,7 +311,10 @@ export default function OrderBoardPage() {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-          <div className="flex gap-3 overflow-x-auto pb-4">
+          {/* Fixed viewport-relative height so columns stretch to the bottom of the page and scroll
+              internally, rather than growing with their card count. Offset ≈ the admin header + the
+              board header/sprint/filter rows above. */}
+          <div className="flex h-[calc(100vh-16rem)] gap-3 overflow-x-auto pb-4">
             {columns.map((col) => (
               <BoardColumn
                 key={columnKey(col)}
