@@ -19,6 +19,7 @@ import com.webappfoundation.dto.PaymentOrderResponse;
 import com.webappfoundation.dto.PlaceOrderRequest;
 import com.webappfoundation.dto.QuoteRequest;
 import com.webappfoundation.dto.QuoteResponse;
+import com.webappfoundation.event.OrderBoardChangedEvent;
 import com.webappfoundation.event.PaymentCapturedEvent;
 import com.webappfoundation.exception.ResourceNotFoundException;
 import com.webappfoundation.inventory.InventoryService;
@@ -46,6 +47,7 @@ import com.webappfoundation.workflow.WorkflowEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -94,6 +96,7 @@ public class OrderService {
     private final EmailService emailService;
     private final AuditService auditService;
     private final SpreadsheetParser spreadsheetParser;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${inventory.reservation-ttl-minutes:15}")
     private int reservationTtlMinutes;
@@ -109,7 +112,8 @@ public class OrderService {
                         AddressService addressService, OrderFeedbackRepository feedbackRepository,
                         OrderStageEventRepository stageEventRepository, UserRepository userRepository,
                         EmailService emailService,
-                        AuditService auditService, SpreadsheetParser spreadsheetParser) {
+                        AuditService auditService, SpreadsheetParser spreadsheetParser,
+                        ApplicationEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
         this.catalogService = catalogService;
         this.inventoryService = inventoryService;
@@ -126,6 +130,15 @@ public class OrderService {
         this.emailService = emailService;
         this.auditService = auditService;
         this.spreadsheetParser = spreadsheetParser;
+        this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * Nudge the live board (SSE) after a board-affecting mutation that is NOT a stage transition — stage moves
+     * already publish {@code OrderStageEnteredEvent} via the engine. {@code OrderBoardStream} fans both to viewers.
+     */
+    private void notifyBoard(Order order) {
+        eventPublisher.publishEvent(new OrderBoardChangedEvent(this, order.getWorkflowCode()));
     }
 
     // ── Place ──
@@ -196,6 +209,7 @@ public class OrderService {
 
         auditService.record(AuditActions.ORDER_PLACED, AuditActions.SUCCESS, "ORDER", String.valueOf(order.getId()),
                 "total=" + total + " workflow=" + workflowCode + " fulfillment=" + fulfillment + " mode=" + paymentMode);
+        notifyBoard(order); // new card on the board (online placement fires no stage move)
         return toDto(order, payment);
     }
 
@@ -308,6 +322,7 @@ public class OrderService {
         orderRepository.save(order);
         auditService.record(AuditActions.ORDER_BLOCKED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
                 "reason=" + reason);
+        notifyBoard(order);
         return toDto(order, null);
     }
 
@@ -334,6 +349,7 @@ public class OrderService {
         orderRepository.save(order);
         auditService.record(AuditActions.ORDER_RESUMED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
                 "stage=" + order.getCurrentStageCode());
+        notifyBoard(order);
         return toDto(order, null);
     }
 
@@ -355,6 +371,7 @@ public class OrderService {
         orderRepository.save(order);
         auditService.record(AuditActions.ORDER_ASSIGNED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
                 "assignee=" + (userId == null ? "none" : userId));
+        notifyBoard(order);
         return toDto(order, null);
     }
 
@@ -403,6 +420,7 @@ public class OrderService {
         auditService.record(AuditActions.ORDER_REFUNDED, result.isOk() ? AuditActions.SUCCESS : AuditActions.FAILURE,
                 "ORDER", String.valueOf(id), "amount=" + refund + " reason=" + safe(reason)
                         + (result.getDetail() == null ? "" : " — " + result.getDetail()));
+        notifyBoard(order);
         return toDto(order, null);
     }
 
@@ -449,6 +467,7 @@ public class OrderService {
         orderRepository.save(order);
         auditService.record(AuditActions.ORDER_MARK_PAID, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
                 "settled at counter");
+        notifyBoard(order);
         return toDto(order, null);
     }
 

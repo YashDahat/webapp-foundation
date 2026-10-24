@@ -424,11 +424,12 @@ class QuoteResponse    { BigDecimal subtotal; List<Option> options; class Option
 class OrderDto         { /* Order fields as DTOs + boolean cancellable; BigDecimal refundPreview; boolean feedbackSubmitted; PaymentOrderResponse payment (online awaiting payment only) */ }
 ```
 Endpoints — customer (`@CurrentUser`): `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/{id}`,
-`POST /api/v1/orders/{id}/cancel`, `POST /api/v1/checkout/quote`. Admin: `GET /api/v1/admin/orders(/{id})`,
+`POST /api/v1/orders/{id}/cancel`, `POST /api/v1/checkout/quote`. Admin: `GET /api/v1/admin/orders` (→ `List<OrderDto>`),
+`GET /api/v1/admin/orders/{id}` (→ `OrderBoardDetailDto` — the board detail sheet),
 `PUT /{id}/stage`, `POST /{id}/cancel`, `POST /{id}/mark-paid`, `POST /bulk-upload`, and board actions
 `POST /{id}/block` · `POST /{id}/resume` · `PUT /{id}/assignee` · `POST /{id}/send-payment-link` · `POST /{id}/refund`.
 `block`/`resume` are also permitted to `STAFF`; the rest stay ADMIN-only (see SecurityConfig). Board read endpoints
-(`GET /{id}/history`, `GET /board`, `GET /board/stream`) are in the **Order board & sprints** section.
+(`GET /{id}` · `GET /{id}/history` · `GET /board` · `GET /board/stream`) are detailed in the **Order board & sprints** section.
 
 ## Order workflow & connectors
 
@@ -494,6 +495,43 @@ class RefundOrderRequest { BigDecimal amount; String reason; }     // null amoun
 ```
 A concurrent/stale board move (someone already moved the card) fails the `Order.@Version` check and surfaces as
 **409 Conflict** (`GlobalExceptionHandler` maps `OptimisticLockingFailureException`) so the UI can refresh.
+
+**Board read model** — `OrderBoardService` assembles the kanban over the order spine (read-only; moves still go
+through `OrderService`/`WorkflowEngine`). Columns are the workflow stages in ordinal order (excluding the terminal
+`CANCELLED` stage) + a synthetic **Blocked** column + the **Cancelled** column. A blocked order shows in Blocked
+regardless of its stage; a cancelled one in Cancelled. `minutesInStage` freezes while blocked; `stuck` = past the
+stage's `targetMinutes` (never while blocked/terminal). Scope is `(workflowCode, sprintId?, branchId?)` — null
+`sprintId` = the active sprint, null `branchId` = **all branches** (and `branches[]` always carries the per-branch
+split for the whole sprint).
+
+```java
+class OrderStageEventDto { Long id; String stageCode; String stageLabel; Instant enteredAt; TriggerType trigger; Integer byUserId; boolean migration; }
+class OrderCardDto { Long id; String orderNumber; String customerName; BigDecimal total; String currency; int itemCount;
+  FulfillmentType fulfillmentType; PaymentMode paymentMode; PaymentState paymentState; Long branchId; String branchName;
+  Integer assignedUserId; String assignedStaffName; boolean blocked; BlockReason blockReason; String channel;
+  String stageCode; Instant stageEnteredAt; Instant blockedAt; Integer targetMinutes; long minutesInStage; boolean stuck;
+  boolean carriedForward; Instant createdAt; }
+class OrderBoardDto { String workflowCode; String workflowLabel; String staffRole; SprintDto sprint; Long branchId;
+  List<Column> columns; FlagCounts flags; List<BranchCount> branches; Instant generatedAt;
+  class Column { String kind; /* STAGE|BLOCKED|CANCELLED */ String stageCode; String label; Integer ordinal; Integer targetMinutes; int count; int stuckCount; List<OrderCardDto> cards; }
+  class FlagCounts { int blocked; int stuck; int unpaid; int unassigned; }
+  class BranchCount { Long branchId; String branchName; int count; } }
+// detail-sheet model: the customer OrderDto + the board-only overlay + the stage-history timeline (one fetch).
+class OrderBoardDetailDto { OrderDto order; String customerName; String stageLabel; Integer assignedUserId; String assignedStaffName;
+  boolean blocked; BlockReason blockReason; String blockNote; Instant blockedAt; Instant stageEnteredAt; Integer targetMinutes;
+  long minutesInStage; boolean stuck; boolean carriedForward; Long sprintId; String channel; List<OrderStageEventDto> timeline; }
+
+class OrderBoardService {
+  OrderBoardDto board(String workflowCode, Long sprintId, Long branchId);
+  OrderBoardDetailDto detail(Long id);                 // admin GET /orders/{id}
+  List<OrderStageEventDto> history(Long id);
+}
+// OrderBoardStream (@Component): holds per-workflow SseEmitters and, AFTER_COMMIT, pushes a "board" refresh event
+//   on OrderStageEnteredEvent (stage move) or OrderBoardChangedEvent (block/resume/assign/refund/mark-paid/placement).
+```
+**Board read endpoints** (`GET`, STAFF-permitted — see SecurityConfig): `GET /api/v1/admin/orders/board?workflowCode=&sprintId=&branchId=`
+→ `OrderBoardDto`; `GET /orders/board/stream?workflowCode=` → SSE (`SseEmitter`; `board` events = refetch nudge, polling
+is the fallback); `GET /orders/{id}` → `OrderBoardDetailDto`; `GET /orders/{id}/history` → `List<OrderStageEventDto>`.
 
 **Sprints** — time-boxed batches the board groups cards by, **per workflow** (branch is a filter within a sprint,
 not its own sprint). Orders join the workflow's `ACTIVE` sprint at `placeOrder` (`Order.sprintId`). Invariant:

@@ -58,6 +58,11 @@ public class SprintService {
         return sprintRepository.findByWorkflowCodeOrderByCreatedAtDesc(workflowCode).stream().map(this::toDto).toList();
     }
 
+    /** A single sprint as a DTO, or null if unknown — used by the board header. */
+    public SprintDto find(Long id) {
+        return id == null ? null : sprintRepository.findById(id).map(this::toDto).orElse(null);
+    }
+
     /** The workflow's current ACTIVE sprint, or null if none — used by placeOrder + the board default view. */
     public OrderSprint activeSprint(String workflowCode) {
         return sprintRepository.findFirstByWorkflowCodeAndStatusOrderByCreatedAtDesc(workflowCode, SprintStatus.ACTIVE)

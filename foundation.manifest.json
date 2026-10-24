@@ -485,7 +485,9 @@
           "OrderStageEvent", "OrderStageEventRepository", "BlockReason",
           "BlockOrderRequest", "AssignOrderRequest", "RefundOrderRequest", "WorkflowStageMappingRequest",
           "SprintStatus", "OrderSprint", "OrderSprintRepository", "SprintService",
-          "SprintDto", "UpsertSprintRequest", "CompleteSprintRequest", "AdminSprintController"
+          "SprintDto", "UpsertSprintRequest", "CompleteSprintRequest", "AdminSprintController",
+          "OrderBoardService", "OrderBoardStream", "OrderBoardChangedEvent",
+          "OrderBoardDto", "OrderCardDto", "OrderBoardDetailDto", "OrderStageEventDto"
         ]
       },
       "frontend": { "modules": [], "guards": [], "fenced": [], "pages": [] },
