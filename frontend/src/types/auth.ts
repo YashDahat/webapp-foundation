@@ -5,8 +5,9 @@
 // frontend (and generated code) has real, importable types for the auth API surface.
 // ApiContractCard picks this file up via the marker line above and feeds it to the LLM.
 
-/** Roles issued by the backend — com.webappfoundation.model.Role. */
-export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
+/** Roles issued by the backend — com.webappfoundation.model.Role.
+ *  STAFF sits below ADMIN: order-board read + status-change (advance stage, block/resume) only. */
+export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'USER';
 
 /** Request body for POST /api/v1/auth/login — com.webappfoundation.dto.AuthRequest.
  *  `username` is the login identifier: email OR phone (India-first login). */

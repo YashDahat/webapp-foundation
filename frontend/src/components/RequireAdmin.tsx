@@ -8,6 +8,9 @@ import { useAuth } from '@/context/AuthContext';
  * ADMIN-gated — this is the UI guard, not the security boundary.
  *
  *   <Route path="/admin/media" element={<RequireAdmin><AdminMediaPage /></RequireAdmin>} />
+ *
+ * STAFF is a restricted role that may use only the order board: it is redirected to /admin/orders rather
+ * than home, so STAFF landing on any ADMIN-only admin page ends up on their one permitted screen.
  */
 export default function RequireAdmin({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();
@@ -18,7 +21,7 @@ export default function RequireAdmin({ children }: { children: ReactNode }) {
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
   if (user?.role !== 'ADMIN' && user?.role !== 'SUPER_ADMIN') {
-    return <Navigate to="/" replace />;
+    return <Navigate to={user?.role === 'STAFF' ? '/admin/orders' : '/'} replace />;
   }
   return <>{children}</>;
 }

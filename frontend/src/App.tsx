@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/context/AuthContext'
 import { CartProvider } from '@/cart/CartContext'
@@ -27,7 +27,7 @@ import AdminSupportPage from '@/pages/admin/AdminSupportPage'
 import AdminUsersPage from '@/pages/admin/AdminUsersPage'
 import AdminProductsPage from '@/pages/admin/AdminProductsPage'
 import AdminRecommendationsPage from '@/pages/admin/AdminRecommendationsPage'
-import AdminOrdersPage from '@/pages/admin/AdminOrdersPage'
+import OrderBoardPage from '@/pages/admin/OrderBoardPage'
 import AdminWorkflowPage from '@/pages/admin/AdminWorkflowPage'
 import AdminConnectorsPage from '@/pages/admin/AdminConnectorsPage'
 import AdminBranchesPage from '@/pages/admin/AdminBranchesPage'
@@ -36,6 +36,7 @@ import AdminFeedbackPage from '@/pages/admin/AdminFeedbackPage'
 import AdminLogsPage from '@/pages/admin/AdminLogsPage'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/RequireAdmin'
+import RequireBoardAccess from '@/components/RequireBoardAccess'
 import AdminLayout from '@/components/AdminLayout'
 
 const queryClient = new QueryClient()
@@ -82,23 +83,27 @@ export default function App() {
                 <Route path="*" element={<HomePage />} />
               </Route>
 
-              {/* Admin area — own AdminLayout, ADMIN-gated, NOT wrapped in SiteLayout */}
+              {/* Admin area — own AdminLayout, NOT wrapped in SiteLayout. The shell admits STAFF
+                  (RequireBoardAccess) so they can reach the order board; every other page is
+                  independently RequireAdmin-gated (STAFF is bounced to /admin/orders). */}
               <Route
                 path="/admin"
-                element={<RequireAdmin><AdminLayout /></RequireAdmin>}
+                element={<RequireBoardAccess><AdminLayout /></RequireBoardAccess>}
               >
-                <Route path="media" element={<AdminMediaPage />} />
-                <Route path="support" element={<AdminSupportPage />} />
-                <Route path="users" element={<AdminUsersPage />} />
-                <Route path="products" element={<AdminProductsPage />} />
-                <Route path="recommendations" element={<AdminRecommendationsPage />} />
-                <Route path="orders" element={<AdminOrdersPage />} />
-                <Route path="workflow" element={<AdminWorkflowPage />} />
-                <Route path="connectors" element={<AdminConnectorsPage />} />
-                <Route path="branches" element={<AdminBranchesPage />} />
-                <Route path="reviews" element={<AdminReviewsPage />} />
-                <Route path="feedback" element={<AdminFeedbackPage />} />
-                <Route path="logs" element={<AdminLogsPage />} />
+                <Route index element={<Navigate to="orders" replace />} />
+                {/* The order board replaces the old /admin/orders grid; STAFF + ADMIN. */}
+                <Route path="orders" element={<OrderBoardPage />} />
+                <Route path="media" element={<RequireAdmin><AdminMediaPage /></RequireAdmin>} />
+                <Route path="support" element={<RequireAdmin><AdminSupportPage /></RequireAdmin>} />
+                <Route path="users" element={<RequireAdmin><AdminUsersPage /></RequireAdmin>} />
+                <Route path="products" element={<RequireAdmin><AdminProductsPage /></RequireAdmin>} />
+                <Route path="recommendations" element={<RequireAdmin><AdminRecommendationsPage /></RequireAdmin>} />
+                <Route path="workflow" element={<RequireAdmin><AdminWorkflowPage /></RequireAdmin>} />
+                <Route path="connectors" element={<RequireAdmin><AdminConnectorsPage /></RequireAdmin>} />
+                <Route path="branches" element={<RequireAdmin><AdminBranchesPage /></RequireAdmin>} />
+                <Route path="reviews" element={<RequireAdmin><AdminReviewsPage /></RequireAdmin>} />
+                <Route path="feedback" element={<RequireAdmin><AdminFeedbackPage /></RequireAdmin>} />
+                <Route path="logs" element={<RequireAdmin><AdminLogsPage /></RequireAdmin>} />
               </Route>
             </Routes>
           </BrowserRouter>

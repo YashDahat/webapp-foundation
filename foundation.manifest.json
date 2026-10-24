@@ -490,7 +490,18 @@
           "OrderBoardDto", "OrderCardDto", "OrderBoardDetailDto", "OrderStageEventDto"
         ]
       },
-      "frontend": { "modules": [], "guards": [], "fenced": [], "pages": [] },
+      "frontend": {
+        "modules": [
+          "/types/sprint", "/services/sprintservice", "/hooks/sprinthooks",
+          "/pages/admin/orderboardpage", "/components/admin/board", "/components/requireboardaccess"
+        ],
+        "guards": ["RequireBoardAccess"],
+        "fenced": [
+          "sprintService", "OrderBoardPage", "RequireBoardAccess",
+          "useOrderBoard", "useOrderBoardStream", "useStaffUsers"
+        ],
+        "pages": []
+      },
       "config": { "env": [], "compose": [] }
     }
   ]

@@ -26,8 +26,12 @@ const NAV: { to: string; label: string; icon: LucideIcon; testId: string }[] = [
 ];
 
 export default function AdminLayout() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
+
+  // STAFF is the restricted order-board role: the board is their only screen, so collapse the nav to it.
+  const isStaff = user?.role === 'STAFF';
+  const nav = isStaff ? NAV.filter((n) => n.to === '/admin/orders') : NAV;
 
   // The admin area follows the app-wide light/dark theme (chosen via the ThemeToggle in the header
   // and persisted by the root ThemeProvider). The `dark` class lives on <html>, so Radix portals —
@@ -53,7 +57,7 @@ export default function AdminLayout() {
       </header>
       <div className="mx-auto flex max-w-[90rem] gap-6 px-4 py-6">
         <aside className="w-48 shrink-0 space-y-1">
-          {NAV.map(({ to, label, icon: Icon, testId }) => (
+          {nav.map(({ to, label, icon: Icon, testId }) => (
             <NavLink key={to} to={to} className={linkClass} data-testid={testId}>
               <Icon className="h-4 w-4 shrink-0" />
               <span>{label}</span>
