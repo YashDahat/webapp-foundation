@@ -17,7 +17,11 @@ class User {
   boolean emailVerified;      // set true after the signup OTP is confirmed; login is blocked until then
   boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts are server-internal)
 }
-enum Role { SUPER_ADMIN, ADMIN, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
+enum Role { SUPER_ADMIN, ADMIN, STAFF, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
+// STAFF = operational role below ADMIN. SecurityConfig grants it a NARROW /admin/** allowlist — only the order board:
+//   GET /orders/board(+/stream), GET /orders/{id}, GET /orders/{id}/history, PUT /orders/{id}/stage, POST /orders/{id}/block|resume.
+// STAFF may view the board and change ticket status (advance/block/resume) only — no cancel/refund/send-payment-link/create,
+// no sprints/workflow/users, no other admin area. Order-board assignees are STAFF users.
 
 interface UserRepository extends JpaRepository<User, Integer> {
   Optional<User> findByEmail(String email);
