@@ -482,7 +482,8 @@
         "controllers": [],
         "packages": [],
         "fenced": [
-          "OrderStageEvent", "OrderStageEventRepository", "BlockReason"
+          "OrderStageEvent", "OrderStageEventRepository", "BlockReason",
+          "BlockOrderRequest", "AssignOrderRequest", "RefundOrderRequest"
         ]
       },
       "frontend": { "modules": [], "guards": [], "fenced": [], "pages": [] },

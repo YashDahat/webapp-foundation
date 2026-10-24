@@ -403,9 +403,15 @@ class OrderService {
   QuoteResponse quote(Integer userId, QuoteRequest req);
   List<OrderDto> myOrders(Integer userId); OrderDto get(Integer userId, Long id);   // ownership-checked
   List<OrderDto> all(); OrderDto getAdmin(Long id);
-  OrderDto advanceStage(Long id, String stageCode);              // admin, trigger=ADMIN
+  OrderDto advanceStage(Long id, String stageCode);              // admin, trigger=ADMIN. Payment guard: unpaid → terminal non-CANCELLED stage = 409
   OrderDto markPaid(Long id);                                    // settle a pay-at-counter pickup
   OrderDto cancel(Long orderId, Integer actingUserId, String reason, boolean adminOverride);  // stage-aware refund
+  // board mutations — guarded by Order.@Version (concurrent/stale move → 409 Conflict):
+  OrderDto block(Long id, BlockReason reason, String note);      // keep stage, freeze timer; terminal order → 409
+  OrderDto resume(Long id);                                      // shift stageEnteredAt by blocked duration (timer resumes)
+  OrderDto assign(Long id, Integer userId);                      // assign STAFF user (null = unassign); snapshots name
+  OrderDto sendPaymentLink(Long id);                             // email the owner a pay link for an AWAITING_PAYMENT order
+  OrderDto refund(Long id, BigDecimal amount, String reason);    // standalone goodwill refund (NOT a cancel) → REFUND_PENDING via refund connector; null amount = full
   BulkUploadResult bulkImport(MultipartFile);
   // @TransactionalEventListener(AFTER_COMMIT) onPaymentCaptured(PaymentCapturedEvent): mark PAID, commit stock, advance to onPaidEntry (idempotent)
   // @Scheduled sweepAbandonedReservations(): release AWAITING_PAYMENT holds past `inventory.reservation-ttl-minutes`
@@ -419,7 +425,10 @@ class OrderDto         { /* Order fields as DTOs + boolean cancellable; BigDecim
 ```
 Endpoints — customer (`@CurrentUser`): `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/{id}`,
 `POST /api/v1/orders/{id}/cancel`, `POST /api/v1/checkout/quote`. Admin: `GET /api/v1/admin/orders(/{id})`,
-`PUT /{id}/stage`, `POST /{id}/cancel`, `POST /{id}/mark-paid`, `POST /bulk-upload`.
+`PUT /{id}/stage`, `POST /{id}/cancel`, `POST /{id}/mark-paid`, `POST /bulk-upload`, and board actions
+`POST /{id}/block` · `POST /{id}/resume` · `PUT /{id}/assignee` · `POST /{id}/send-payment-link` · `POST /{id}/refund`.
+`block`/`resume` are also permitted to `STAFF`; the rest stay ADMIN-only (see SecurityConfig). Board read endpoints
+(`GET /{id}/history`, `GET /board`, `GET /board/stream`) are in the **Order board & sprints** section.
 
 ## Order workflow & connectors
 
@@ -473,7 +482,14 @@ interface OrderStageEventRepository extends JpaRepository<OrderStageEvent,Long> 
 
 // WorkflowEngine.advance(...) now also: sets Order.stageEnteredAt = now (resets the time-in-stage/"stuck" timer)
 // and appends an OrderStageEvent. placeOrder seeds the timeline with the initial stage.
+
+// Board-mutation request DTOs (see OrderService.block/assign/refund):
+class BlockOrderRequest  { BlockReason reason; String note; }
+class AssignOrderRequest { Integer userId; }                       // null = unassign
+class RefundOrderRequest { BigDecimal amount; String reason; }     // null amount = full total
 ```
+A concurrent/stale board move (someone already moved the card) fails the `Order.@Version` check and surfaces as
+**409 Conflict** (`GlobalExceptionHandler` maps `OptimisticLockingFailureException`) so the UI can refresh.
 
 ## Branches & address book
 

@@ -45,6 +45,16 @@ public final class AuditActions {
     public static final String ORDER_RESERVATION_EXPIRED = "ORDER_RESERVATION_EXPIRED";
     public static final String ORDER_BULK_IMPORT = "ORDER_BULK_IMPORT";
 
+    // Order board
+    public static final String ORDER_BLOCKED = "ORDER_BLOCKED";
+    public static final String ORDER_RESUMED = "ORDER_RESUMED";
+    public static final String ORDER_ASSIGNED = "ORDER_ASSIGNED";
+    public static final String ORDER_PAYMENT_LINK_SENT = "ORDER_PAYMENT_LINK_SENT";
+    public static final String ORDER_REFUNDED = "ORDER_REFUNDED";
+    public static final String SPRINT_COMPLETED = "SPRINT_COMPLETED";
+    public static final String ORDER_CARRIED_FORWARD = "ORDER_CARRIED_FORWARD";
+    public static final String WORKFLOW_STAGE_MIGRATED = "WORKFLOW_STAGE_MIGRATED";
+
     // Workflow / connectors admin
     public static final String WORKFLOW_UPDATED = "WORKFLOW_UPDATED";
     public static final String CONNECTOR_UPDATED = "CONNECTOR_UPDATED";

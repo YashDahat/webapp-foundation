@@ -1,13 +1,17 @@
 package com.webappfoundation.controller.admin;
 
 import com.webappfoundation.dto.AdvanceStageRequest;
+import com.webappfoundation.dto.AssignOrderRequest;
+import com.webappfoundation.dto.BlockOrderRequest;
 import com.webappfoundation.dto.BulkUploadResult;
 import com.webappfoundation.dto.CancelOrderRequest;
 import com.webappfoundation.dto.OrderDto;
+import com.webappfoundation.dto.RefundOrderRequest;
 import com.webappfoundation.service.OrderService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -49,6 +53,35 @@ public class AdminOrderController {
     @PostMapping("/{id}/mark-paid")
     public OrderDto markPaid(@PathVariable Long id) {
         return orderService.markPaid(id);
+    }
+
+    // ── Order board (block/resume are STAFF-permitted; assignee/payment-link/refund are ADMIN-only) ──
+
+    @PostMapping("/{id}/block")
+    public OrderDto block(@PathVariable Long id, @RequestBody BlockOrderRequest request) {
+        return orderService.block(id, request.getReason(), request.getNote());
+    }
+
+    @PostMapping("/{id}/resume")
+    public OrderDto resume(@PathVariable Long id) {
+        return orderService.resume(id);
+    }
+
+    @PutMapping("/{id}/assignee")
+    public OrderDto assign(@PathVariable Long id, @RequestBody AssignOrderRequest request) {
+        return orderService.assign(id, request.getUserId());
+    }
+
+    @PostMapping("/{id}/send-payment-link")
+    public OrderDto sendPaymentLink(@PathVariable Long id) {
+        return orderService.sendPaymentLink(id);
+    }
+
+    @PostMapping("/{id}/refund")
+    public OrderDto refund(@PathVariable Long id, @RequestBody(required = false) RefundOrderRequest request) {
+        BigDecimal amount = request == null ? null : request.getAmount();
+        String reason = request == null ? null : request.getReason();
+        return orderService.refund(id, amount, reason);
     }
 
     @PostMapping(value = "/bulk-upload", consumes = "multipart/form-data")
