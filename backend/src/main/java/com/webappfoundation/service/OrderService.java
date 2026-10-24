@@ -25,6 +25,7 @@ import com.webappfoundation.model.FulfillmentType;
 import com.webappfoundation.model.Order;
 import com.webappfoundation.model.OrderAdjustment;
 import com.webappfoundation.model.OrderItem;
+import com.webappfoundation.model.OrderStageEvent;
 import com.webappfoundation.model.PaymentMode;
 import com.webappfoundation.model.PaymentState;
 import com.webappfoundation.model.RefundPolicy;
@@ -34,6 +35,7 @@ import com.webappfoundation.model.WorkflowStage;
 import com.webappfoundation.repository.BranchRepository;
 import com.webappfoundation.repository.OrderFeedbackRepository;
 import com.webappfoundation.repository.OrderRepository;
+import com.webappfoundation.repository.OrderStageEventRepository;
 import com.webappfoundation.workflow.WorkflowEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,6 +82,7 @@ public class OrderService {
     private final BranchRepository branchRepository;
     private final AddressService addressService;
     private final OrderFeedbackRepository feedbackRepository;
+    private final OrderStageEventRepository stageEventRepository;
     private final AuditService auditService;
     private final SpreadsheetParser spreadsheetParser;
 
@@ -91,6 +94,7 @@ public class OrderService {
                         WorkflowEngine workflowEngine, ConnectorRegistry connectorRegistry,
                         PaymentService paymentService, BranchRepository branchRepository,
                         AddressService addressService, OrderFeedbackRepository feedbackRepository,
+                        OrderStageEventRepository stageEventRepository,
                         AuditService auditService, SpreadsheetParser spreadsheetParser) {
         this.orderRepository = orderRepository;
         this.catalogService = catalogService;
@@ -102,6 +106,7 @@ public class OrderService {
         this.branchRepository = branchRepository;
         this.addressService = addressService;
         this.feedbackRepository = feedbackRepository;
+        this.stageEventRepository = stageEventRepository;
         this.auditService = auditService;
         this.spreadsheetParser = spreadsheetParser;
     }
@@ -149,6 +154,7 @@ public class OrderService {
                 .paymentMode(paymentMode)
                 .workflowCode(workflowCode)
                 .currentStageCode(initial.getCode())
+                .stageEnteredAt(now)
                 .paymentState(PaymentState.AWAITING_PAYMENT)
                 .subtotal(cart.subtotal)
                 .total(total)
@@ -163,6 +169,10 @@ public class OrderService {
         order.setOrderNumber(buildOrderNumber(order.getId(), now));
         order.setReferenceId("order_" + order.getId());
         order = orderRepository.save(order);
+        // seed the stage-history timeline with the initial stage (no connectors fire for this entry)
+        stageEventRepository.save(OrderStageEvent.builder()
+                .orderId(order.getId()).stageCode(initial.getCode()).enteredAt(now).trigger(TriggerType.SYSTEM)
+                .build());
 
         PaymentOrderResponse payment = settlePlacement(order, paymentMode, fulfillment, total, workflowCode);
 
@@ -364,6 +374,7 @@ public class OrderService {
                     .paymentMode(PaymentMode.ONLINE)
                     .workflowCode(workflowCode)
                     .currentStageCode(workflowService.initialStage(workflowCode).getCode())
+                    .stageEnteredAt(now)
                     .paymentState(PaymentState.PAID)
                     .subtotal(line).total(line).currency(CURRENCY)
                     .items(new ArrayList<>(List.of(OrderItem.builder()
@@ -375,6 +386,9 @@ public class OrderService {
             order.setOrderNumber(buildOrderNumber(order.getId(), now));
             order.setReferenceId("order_" + order.getId());
             orderRepository.save(order);
+            stageEventRepository.save(OrderStageEvent.builder()
+                    .orderId(order.getId()).stageCode(order.getCurrentStageCode()).enteredAt(now)
+                    .trigger(TriggerType.SYSTEM).build());
             result.setCreated(result.getCreated() + 1);
         }
         auditService.record(AuditActions.ORDER_BULK_IMPORT, AuditActions.SUCCESS, "ORDER", null,

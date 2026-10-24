@@ -473,6 +473,20 @@
         ]
       },
       "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "order-board",
+      "core": false,
+      "requires": ["orders", "branches"],
+      "backend": {
+        "controllers": [],
+        "packages": [],
+        "fenced": [
+          "OrderStageEvent", "OrderStageEventRepository", "BlockReason"
+        ]
+      },
+      "frontend": { "modules": [], "guards": [], "fenced": [], "pages": [] },
+      "config": { "env": [], "compose": [] }
     }
   ]
 }

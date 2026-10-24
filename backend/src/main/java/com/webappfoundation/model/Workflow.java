@@ -32,4 +32,7 @@ public class Workflow {
     @Column(nullable = false)
     @Builder.Default
     private boolean isDefault = false;
+
+    /** Order-board label for the staff role that fulfils this workflow (e.g. "Rider", "Packer"); nullable. */
+    private String staffRole;
 }

@@ -386,6 +386,10 @@ class Order { Long id; Integer userId; String orderNumber; String referenceId; L
   FulfillmentType fulfillmentType; PaymentMode paymentMode; String workflowCode; String currentStageCode;
   PaymentState paymentState; BigDecimal subtotal; BigDecimal total; BigDecimal refundAmount; String cancelReason;
   String currency; Address shippingAddress; List<OrderItem> items; List<OrderAdjustment> adjustments;
+  // order-board fields (admin kanban; NEVER leaked into the customer OrderDto — board DTOs carry them):
+  Integer assignedUserId; String assignedStaffName; boolean blocked; BlockReason blockReason; String blockNote;
+  Instant blockedAt; Instant stageEnteredAt; boolean carriedForward; Long sprintId; String channel;
+  Long version;                                                            // @Version — optimistic lock; stale board move → 409
   Instant createdAt; Instant updatedAt; }                                  // table "orders"
 class OrderItem { Long id; String itemType; Long itemId; String variantKey; String variantLabel; String name; BigDecimal unitPrice; int quantity; String imageUrl; }
 class OrderAdjustment { String code; String label; BigDecimal amount; String connectorId; }   // embeddable
@@ -424,10 +428,11 @@ it — all editable at `/admin/workflow`, no engine edits. Attach external servi
 notifications) as **connector beans**; never call a third-party API inline from domain code.
 
 ```java
-class Workflow      { Long id; String code; String label; boolean isDefault; }    // seeded: "default", "food"
+class Workflow      { Long id; String code; String label; boolean isDefault; String staffRole; }   // staffRole = board label (e.g. "Rider"); seeded: "default","food","retail","services"
 class WorkflowStage { Long id; String workflowCode; String code; String label; int ordinal;
   boolean initial; boolean onPaidEntry; boolean terminal;
-  boolean cancellable; RefundPolicy refundPolicy; Integer refundPercent; }         // unique (workflowCode, code)
+  boolean cancellable; RefundPolicy refundPolicy; Integer refundPercent;
+  Integer targetMinutes; }                                                         // board SLA: "stuck" = time-in-stage > targetMinutes; unique (workflowCode, code)
 enum RefundPolicy { FULL, PARTIAL, NONE }
 class WorkflowBinding   { Long id; Long stageId; String connectorId; String actionCode; int ordinal; boolean enabled; Map<String,String> params; }  // keyed by stage ID, not code
 class WorkflowExecution { Long id; Long orderId; Long stageId; Long bindingId; String connectorId; String actionCode; ExecutionStatus status; String detail; Instant createdAt; Instant updatedAt; }  // dedupe ledger; unique (orderId,stageId,bindingId)
@@ -451,6 +456,24 @@ class ConnectorRegistry { OrderConnector byId(String id); List<OrderConnector> a
 A new connector = ONE `@Component` implementing the relevant SPI(s) + declaring `actions()`; it then appears in
 `/admin/connectors` and the workflow builder automatically. Inbound: `POST /api/v1/connectors/{connectorId}/webhook`
 (public, per-connector verified). Admin: `GET/PUT /api/v1/admin/workflow(/{code})`, `GET/PUT /api/v1/admin/connectors(/{id})`.
+
+## Order board & sprints
+
+An admin kanban over the order spine (board = `/admin/orders`). Columns are the workflow stages (+ synthetic
+**Blocked** and **Cancelled**); moves drive `OrderService`/`WorkflowEngine` — never a hardcoded lifecycle.
+The board fields live on `Order` (above) and are **never** exposed on the customer `OrderDto`.
+
+```java
+enum BlockReason { OUT_OF_STOCK, CUSTOMER_UNREACHABLE, PAYMENT_ISSUE, STAFF_UNAVAILABLE, ADDRESS_ISSUE, OTHER }
+
+// Stage-history timeline (board detail panel). Appended by WorkflowEngine on every transition + at placement.
+// Block/resume/assign are NOT recorded here — they live in audit_log. migration=true marks a workflow-edit remap.
+class OrderStageEvent { Long id; Long orderId; String stageCode; Instant enteredAt; TriggerType trigger; Integer byUserId; boolean migration; }  // table "order_stage_event"
+interface OrderStageEventRepository extends JpaRepository<OrderStageEvent,Long> { List<OrderStageEvent> findByOrderIdOrderByEnteredAtAsc(Long orderId); }
+
+// WorkflowEngine.advance(...) now also: sets Order.stageEnteredAt = now (resets the time-in-stage/"stuck" timer)
+// and appends an OrderStageEvent. placeOrder seeds the timeline with the initial stage.
+```
 
 ## Branches & address book
 

@@ -91,6 +91,41 @@ public class Order {
     @Builder.Default
     private List<OrderAdjustment> adjustments = new ArrayList<>();
 
+    // ── Order-board fields (admin kanban; never leaked into the customer OrderDto) ──
+
+    /** Assigned operational staff (User.id) + a name snapshot for the card; null when unassigned. */
+    private Integer assignedUserId;
+    private String assignedStaffName;
+
+    /** Orthogonal to the stage: a blocked order keeps its stage but pauses its time-in-stage timer. */
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean blocked = false;
+
+    @Enumerated(EnumType.STRING)
+    private BlockReason blockReason;
+    private String blockNote;
+    /** When the block started — used to freeze the timer; cleared on resume. */
+    private Instant blockedAt;
+
+    /** When the order entered its current stage — the source for time-in-stage / "stuck" detection. */
+    private Instant stageEnteredAt;
+
+    /** True when this order was carried forward from a completed sprint into the next one. */
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean carriedForward = false;
+
+    /** The sprint (time-boxed batch) this order belongs to; null when no active sprint existed at placement. */
+    private Long sprintId;
+
+    /** Cosmetic source channel shown on the card (e.g. "Marketplace"); nullable. */
+    private String channel;
+
+    /** Optimistic lock — concurrent board moves on a stale card are rejected with 409 (see OrderService). */
+    @Version
+    private Long version;
+
     @Column(nullable = false)
     private Instant createdAt;
 
