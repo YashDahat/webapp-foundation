@@ -4,11 +4,17 @@ import com.webappfoundation.connector.builtin.EmailConnector;
 import com.webappfoundation.connector.demo.DemoDeliveryConnector;
 import com.webappfoundation.connector.demo.DemoRefundConnector;
 import com.webappfoundation.dto.WorkflowDto;
+import com.webappfoundation.dto.WorkflowStageMappingRequest;
 import com.webappfoundation.exception.ResourceNotFoundException;
+import com.webappfoundation.model.Order;
+import com.webappfoundation.model.OrderStageEvent;
 import com.webappfoundation.model.RefundPolicy;
+import com.webappfoundation.model.TriggerType;
 import com.webappfoundation.model.Workflow;
 import com.webappfoundation.model.WorkflowBinding;
 import com.webappfoundation.model.WorkflowStage;
+import com.webappfoundation.repository.OrderRepository;
+import com.webappfoundation.repository.OrderStageEventRepository;
 import com.webappfoundation.repository.WorkflowBindingRepository;
 import com.webappfoundation.repository.WorkflowRepository;
 import com.webappfoundation.repository.WorkflowStageRepository;
@@ -21,9 +27,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Owns workflow definitions: seeds the default + food workflows on first boot, enforces invariants, and
@@ -41,12 +52,19 @@ public class WorkflowService {
     private final WorkflowRepository workflowRepository;
     private final WorkflowStageRepository stageRepository;
     private final WorkflowBindingRepository bindingRepository;
+    private final OrderRepository orderRepository;
+    private final OrderStageEventRepository stageEventRepository;
+    private final AuditService auditService;
 
     public WorkflowService(WorkflowRepository workflowRepository, WorkflowStageRepository stageRepository,
-                           WorkflowBindingRepository bindingRepository) {
+                           WorkflowBindingRepository bindingRepository, OrderRepository orderRepository,
+                           OrderStageEventRepository stageEventRepository, AuditService auditService) {
         this.workflowRepository = workflowRepository;
         this.stageRepository = stageRepository;
         this.bindingRepository = bindingRepository;
+        this.orderRepository = orderRepository;
+        this.stageEventRepository = stageEventRepository;
+        this.auditService = auditService;
     }
 
     // ── Seeding ──
@@ -190,8 +208,13 @@ public class WorkflowService {
 
     /**
      * Replace a workflow's stages + bindings wholesale from the builder, then re-check invariants. Keeps the
-     * same {@code code} (in-flight orders reference it). Stage codes should be preserved by the admin so
-     * orders already at a stage stay valid.
+     * same {@code code} (in-flight orders reference it).
+     *
+     * <p><b>In-flight order migration (§6):</b> removing a stage <b>code</b> that live (non-terminal) orders
+     * occupy would strand those cards. So we diff old→new codes; for any removed code live orders sit in, we
+     * require {@code dto.stageMapping[removedCode] = survivingCode} (a surviving new code) and reject with 409
+     * otherwise. The remap is applied as a <b>migration, not a transition</b>: orders are re-stamped in bulk
+     * with NO connectors fired, a migration-flagged {@link OrderStageEvent} appended, and the change audited.
      */
     @Transactional
     public void replaceWorkflow(String code, WorkflowDto dto) {
@@ -199,9 +222,18 @@ public class WorkflowService {
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + code));
         if (dto.getLabel() != null && !dto.getLabel().isBlank()) {
             workflow.setLabel(dto.getLabel());
-            workflowRepository.save(workflow);
         }
+        if (dto.getStaffRole() != null) {
+            workflow.setStaffRole(dto.getStaffRole().isBlank() ? null : dto.getStaffRole());
+        }
+        workflowRepository.save(workflow);
+
         List<WorkflowStage> existing = stageRepository.findByWorkflowCodeOrderByOrdinal(code);
+        // Diff old→new codes and plan any required migration BEFORE touching the stage rows.
+        Set<String> newCodes = (dto.getStages() == null ? List.<WorkflowDto.StageDto>of() : dto.getStages())
+                .stream().map(WorkflowDto.StageDto::getCode).collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<String, String> remap = planStageMigration(code, existing, newCodes, dto.getStageMapping());
+
         for (WorkflowStage s : existing) {
             bindingRepository.deleteByStageId(s.getId());
         }
@@ -223,6 +255,7 @@ public class WorkflowService {
                     .cancellable(sd.isCancellable())
                     .refundPolicy(sd.getRefundPolicy() == null ? RefundPolicy.NONE : sd.getRefundPolicy())
                     .refundPercent(sd.getRefundPercent())
+                    .targetMinutes(sd.getTargetMinutes())
                     .build());
             int bOrdinal = 0;
             for (WorkflowDto.BindingDto bd : sd.getBindings() == null ? List.<WorkflowDto.BindingDto>of() : sd.getBindings()) {
@@ -237,6 +270,64 @@ public class WorkflowService {
             }
         }
         validateInvariants(code);
+        applyStageMigration(code, remap);
+    }
+
+    /**
+     * Compute the removed→surviving remap required to keep live orders valid, validating the admin-supplied
+     * mapping. Returns only the entries that actually need re-stamping (removed code with live orders). Throws
+     * 409 if a live order's removed stage has no valid mapping to a surviving code.
+     */
+    private Map<String, String> planStageMigration(String code, List<WorkflowStage> existing,
+                                                    Set<String> newCodes, WorkflowStageMappingRequest mapping) {
+        Map<String, Boolean> oldTerminalByCode = existing.stream()
+                .collect(Collectors.toMap(WorkflowStage::getCode, WorkflowStage::isTerminal, (a, b) -> a));
+        Map<String, String> supplied = mapping == null || mapping.getMapping() == null ? Map.of() : mapping.getMapping();
+        Map<String, String> remap = new HashMap<>();
+        for (Map.Entry<String, Boolean> e : oldTerminalByCode.entrySet()) {
+            String removedCode = e.getKey();
+            if (newCodes.contains(removedCode)) {
+                continue; // code preserved (additive change / label-only rename) — orders untouched
+            }
+            List<Order> live = orderRepository.findByWorkflowCodeAndCurrentStageCodeIn(code, List.of(removedCode))
+                    .stream().filter(o -> !isTerminalNow(oldTerminalByCode, o.getCurrentStageCode())).toList();
+            if (live.isEmpty()) {
+                continue; // no live order stranded by dropping this code
+            }
+            String target = supplied.get(removedCode);
+            if (target == null || !newCodes.contains(target)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Stage '" + removedCode + "' has " + live.size() + " live order(s) — supply a stageMapping to a surviving stage before removing it");
+            }
+            remap.put(removedCode, target);
+        }
+        return remap;
+    }
+
+    private boolean isTerminalNow(Map<String, Boolean> oldTerminalByCode, String stageCode) {
+        return Boolean.TRUE.equals(oldTerminalByCode.get(stageCode));
+    }
+
+    /** Bulk re-stamp stranded orders onto their surviving stage — a migration, NOT a transition (no connectors). */
+    private void applyStageMigration(String code, Map<String, String> remap) {
+        if (remap.isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        for (Map.Entry<String, String> e : remap.entrySet()) {
+            List<Order> orders = orderRepository.findByWorkflowCodeAndCurrentStageCodeIn(code, List.of(e.getKey()));
+            for (Order o : orders) {
+                o.setCurrentStageCode(e.getValue());
+                o.setStageEnteredAt(now);
+                o.setUpdatedAt(now);
+                orderRepository.save(o);
+                stageEventRepository.save(OrderStageEvent.builder()
+                        .orderId(o.getId()).stageCode(e.getValue()).enteredAt(now)
+                        .trigger(TriggerType.ADMIN).migration(true).build());
+            }
+            auditService.record(AuditActions.WORKFLOW_STAGE_MIGRATED, AuditActions.SUCCESS, "WORKFLOW", code,
+                    "remapped " + orders.size() + " order(s) " + e.getKey() + " -> " + e.getValue());
+        }
     }
 
     private WorkflowDto toDto(Workflow w) {
@@ -252,11 +343,12 @@ public class WorkflowService {
                     .id(s.getId()).code(s.getCode()).label(s.getLabel()).ordinal(s.getOrdinal())
                     .initial(s.isInitial()).onPaidEntry(s.isOnPaidEntry()).terminal(s.isTerminal())
                     .cancellable(s.isCancellable()).refundPolicy(s.getRefundPolicy()).refundPercent(s.getRefundPercent())
+                    .targetMinutes(s.getTargetMinutes())
                     .bindings(bindings)
                     .build());
         }
         return WorkflowDto.builder()
-                .code(w.getCode()).label(w.getLabel()).isDefault(w.isDefault()).stages(stages)
+                .code(w.getCode()).label(w.getLabel()).isDefault(w.isDefault()).staffRole(w.getStaffRole()).stages(stages)
                 .build();
     }
 }

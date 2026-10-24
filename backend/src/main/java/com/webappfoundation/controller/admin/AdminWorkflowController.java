@@ -31,6 +31,8 @@ public class AdminWorkflowController {
 
     @PutMapping("/{code}")
     public List<WorkflowDto> replace(@PathVariable String code, @RequestBody WorkflowDto request) {
+        // An optional request.stageMapping migrates in-flight orders off removed stage codes (409 if required
+        // but missing); replaceWorkflow audits the remap itself (WORKFLOW_STAGE_MIGRATED).
         workflowService.replaceWorkflow(code, request);
         auditService.record(AuditActions.WORKFLOW_UPDATED, AuditActions.SUCCESS, "WORKFLOW", code,
                 "stages=" + (request.getStages() == null ? 0 : request.getStages().size()));

@@ -450,7 +450,11 @@ enum TriggerType { SYSTEM, PAYMENT, WEBHOOK, ADMIN, RETRY }
 
 class WorkflowEngine { boolean advance(Order order, String toStageCode, TriggerType trigger); }  // idempotent for SYSTEM/PAYMENT/WEBHOOK
 class StageActionDispatcher { /* @Async @TransactionalEventListener(AFTER_COMMIT): fans a stage's enabled bindings to connectors; dedupes SUCCESS via WorkflowExecution */ }
-class WorkflowService { /* seeds default+food, enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow() */ }
+class WorkflowService { /* seeds default+food(+retail+services), enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow() */ }
+// replaceWorkflow(code, WorkflowDto): WorkflowDto now carries staffRole + per-stage targetMinutes, and an optional
+//   stageMapping (WorkflowStageMappingRequest{ Map<String,String> mapping }). Removing a stage CODE that live
+//   (non-terminal) orders occupy REQUIRES mapping[removedCode]=survivingCode or the save is rejected 409; the
+//   remap is a migration (bulk re-stamp, NO connectors fired, migration-flagged OrderStageEvent, audited).
 
 // Connector SPI — connector/
 enum ConnectorCategory { SHIPPING, TAX, DISCOUNT, PAYMENT, FULFILLMENT, NOTIFICATION, OTHER }
