@@ -263,6 +263,30 @@ export interface OrderBoardDetailDto {
   timeline: OrderStageEventDto[];
 }
 
+/** One row of the admin All-orders archive (flat, cross-sprint / cross-workflow record). ADMIN-only. */
+export interface OrderArchiveRowDto {
+  id: number;
+  orderNumber: string;
+  customerName?: string | null;
+  workflowCode: string;
+  workflowLabel: string;
+  stageCode: string;
+  stageLabel: string;
+  blocked: boolean;
+  sprintId?: number | null;
+  sprintName?: string | null;
+  paymentState: PaymentState;
+  fulfillmentType: FulfillmentType;
+  branchId?: number | null;
+  branchName?: string | null;
+  assignedStaffName?: string | null;
+  total: number;
+  currency: string;
+  carriedForward: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BlockOrderRequest {
   reason: BlockReason;
   note?: string | null;

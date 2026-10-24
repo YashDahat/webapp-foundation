@@ -4,7 +4,7 @@ import apiClient from '@/api/client';
 import type { BulkUploadResult } from '@/types/bulkUpload';
 import type {
   OrderDto, PlaceOrderRequest, QuoteRequest, QuoteResponse,
-  OrderBoardDto, OrderBoardDetailDto, OrderStageEventDto, BlockReason,
+  OrderBoardDto, OrderBoardDetailDto, OrderStageEventDto, BlockReason, OrderArchiveRowDto,
 } from '@/types/order';
 
 export const orderService = {
@@ -61,6 +61,17 @@ export const orderService = {
   /** GET /api/v1/admin/orders/{id}/history — the order's stage-history timeline. */
   history: async (id: number): Promise<OrderStageEventDto[]> => {
     const { data } = await apiClient.get<OrderStageEventDto[]>(`/api/v1/admin/orders/${id}/history`);
+    return data;
+  },
+  /** GET /api/v1/admin/orders/archive — flat cross-sprint / cross-workflow order record (ADMIN-only). */
+  archive: async (filters?: { workflowCode?: string; sprintId?: number | null; branchId?: number | null }): Promise<OrderArchiveRowDto[]> => {
+    const { data } = await apiClient.get<OrderArchiveRowDto[]>('/api/v1/admin/orders/archive', {
+      params: {
+        workflowCode: filters?.workflowCode || undefined,
+        sprintId: filters?.sprintId ?? undefined,
+        branchId: filters?.branchId ?? undefined,
+      },
+    });
     return data;
   },
   block: async (id: number, reason: BlockReason, note?: string | null): Promise<OrderDto> => {

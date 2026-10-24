@@ -25,6 +25,7 @@ them and, where noted, add your business content on top.
 | `/admin/media` | `pages/admin/AdminMediaPage.tsx` | `RequireAdmin` | Media library admin. |
 | `/admin/products` · `/admin/recommendations` | — | `RequireAdmin` | Catalog + recommendation admin (grids + bulk upload). |
 | `/admin/orders` | `pages/admin/OrderBoardPage.tsx` | board shell + `RequireAdmin` | **Order board** — admin kanban over the order spine (replaces the old grid). STAFF-accessible. See "Order board". |
+| `/admin/order-archive` | `pages/admin/AdminOrdersArchivePage.tsx` | `RequireAdmin` | **All orders** — flat cross-sprint / cross-workflow record (AdminDataGrid). ADMIN-only. See "Order board". |
 | `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | The workflow builder (React Flow diagram) + connector toggles. |
 | `/admin/branches` · `/admin/feedback` | — | `RequireAdmin` | Branch admin (+ bulk) · read-only feedback grid. |
 | `/admin/reviews` | `pages/admin/AdminReviewsPage.tsx` | `RequireAdmin` | Product-review moderation grid (delete; no bulk). |
@@ -456,15 +457,16 @@ Do NOT rebuild the board, its hooks/services, or re-add a route — extend it.
 ```ts
 import { orderService } from '@/services/orderService';
 // Board SDK (admin): board(workflowCode, sprintId?, branchId?) → OrderBoardDto; adminGet(id) → OrderBoardDetailDto;
-//   history(id); block(id, reason, note?); resume(id); assign(id, userId|null); sendPaymentLink(id); refund(id, amount?, reason?)
+//   history(id); block(id, reason, note?); resume(id); assign(id, userId|null); sendPaymentLink(id); refund(id, amount?, reason?);
+//   archive({workflowCode?, sprintId?, branchId?}) → OrderArchiveRowDto[]  (flat cross-sprint record; backs the "All orders" page)
 import {
-  useOrderBoard, useOrderBoardDetail, useOrderHistory, useOrderBoardStream, useStaffUsers,
+  useOrderBoard, useOrderBoardDetail, useOrderHistory, useOrderBoardStream, useStaffUsers, useOrderArchive,
   useBlockOrder, useResumeOrder, useAssignOrder, useSendPaymentLink, useRefundOrder,
   useAdvanceStage, useAdminCancelOrder, useMarkPaid,
 } from '@/hooks/orderHooks';
 import type {
   OrderBoardDto, BoardColumnDto, OrderCardDto, BoardFlagCounts, BoardBranchCount,
-  OrderBoardDetailDto, OrderStageEventDto, BlockReason, TriggerType,
+  OrderBoardDetailDto, OrderStageEventDto, BlockReason, TriggerType, OrderArchiveRowDto,
   BlockOrderRequest, AssignOrderRequest, RefundOrderRequest,
 } from '@/types/order';
 // useOrderBoardStream(workflowCode, onPush): SSE via fetch (EventSource can't send the JWT header); nudges a

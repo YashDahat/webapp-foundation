@@ -2,7 +2,7 @@
 // public SiteLayout). Generated sites add their own admin links here; the gallery link ships by default.
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Image, Package, Sparkles, ShoppingCart, Workflow, Plug, Store, Star,
+  Image, Package, Sparkles, ShoppingCart, Archive, Workflow, Plug, Store, Star,
   MessageSquare, LifeBuoy, Users, ScrollText, type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -15,6 +15,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; testId: string }[] = [
   { to: '/admin/products', label: 'Products', icon: Package, testId: 'admin-nav-products' },
   { to: '/admin/recommendations', label: 'Recommendations', icon: Sparkles, testId: 'admin-nav-recommendations' },
   { to: '/admin/orders', label: 'Orders', icon: ShoppingCart, testId: 'admin-nav-orders' },
+  { to: '/admin/order-archive', label: 'All orders', icon: Archive, testId: 'admin-nav-order-archive' },
   { to: '/admin/workflow', label: 'Workflow', icon: Workflow, testId: 'admin-nav-workflow' },
   { to: '/admin/connectors', label: 'Connectors', icon: Plug, testId: 'admin-nav-connectors' },
   { to: '/admin/branches', label: 'Branches', icon: Store, testId: 'admin-nav-branches' },

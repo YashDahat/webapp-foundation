@@ -521,10 +521,17 @@ class OrderBoardDetailDto { OrderDto order; String customerName; String stageLab
   boolean blocked; BlockReason blockReason; String blockNote; Instant blockedAt; Instant stageEnteredAt; Integer targetMinutes;
   long minutesInStage; boolean stuck; boolean carriedForward; Long sprintId; String channel; List<OrderStageEventDto> timeline; }
 
+// Flat cross-sprint / cross-workflow record row for the admin "All orders" archive (ADMIN-only).
+class OrderArchiveRowDto { Long id; String orderNumber; String customerName; String workflowCode; String workflowLabel;
+  String stageCode; String stageLabel; boolean blocked; Long sprintId; String sprintName; PaymentState paymentState;
+  FulfillmentType fulfillmentType; Long branchId; String branchName; String assignedStaffName; BigDecimal total;
+  String currency; boolean carriedForward; Instant createdAt; Instant updatedAt; }
+
 class OrderBoardService {
   OrderBoardDto board(String workflowCode, Long sprintId, Long branchId);
   OrderBoardDetailDto detail(Long id);                 // admin GET /orders/{id}
   List<OrderStageEventDto> history(Long id);
+  List<OrderArchiveRowDto> archive(String workflowCode, Long sprintId, Long branchId);  // all orders, newest first
 }
 // OrderBoardStream (@Component): holds per-workflow SseEmitters and, AFTER_COMMIT, pushes a "board" refresh event
 //   on OrderStageEnteredEvent (stage move) or OrderBoardChangedEvent (block/resume/assign/refund/mark-paid/placement).
@@ -532,6 +539,9 @@ class OrderBoardService {
 **Board read endpoints** (`GET`, STAFF-permitted — see SecurityConfig): `GET /api/v1/admin/orders/board?workflowCode=&sprintId=&branchId=`
 → `OrderBoardDto`; `GET /orders/board/stream?workflowCode=` → SSE (`SseEmitter`; `board` events = refetch nudge, polling
 is the fallback); `GET /orders/{id}` → `OrderBoardDetailDto`; `GET /orders/{id}/history` → `List<OrderStageEventDto>`.
+**All-orders archive** (`GET /api/v1/admin/orders/archive?workflowCode=&sprintId=&branchId=` → `List<OrderArchiveRowDto>`,
+**ADMIN-only** — pinned ahead of the STAFF `/orders/*` rule in SecurityConfig so STAFF can't read the full record):
+the flat cross-sprint record view behind the admin "All orders" page.
 
 **Sprints** — time-boxed batches the board groups cards by, **per workflow** (branch is a filter within a sprint,
 not its own sprint). Orders join the workflow's `ACTIVE` sprint at `placeOrder` (`Order.sprintId`). Invariant:

@@ -28,6 +28,7 @@ import AdminUsersPage from '@/pages/admin/AdminUsersPage'
 import AdminProductsPage from '@/pages/admin/AdminProductsPage'
 import AdminRecommendationsPage from '@/pages/admin/AdminRecommendationsPage'
 import OrderBoardPage from '@/pages/admin/OrderBoardPage'
+import AdminOrdersArchivePage from '@/pages/admin/AdminOrdersArchivePage'
 import AdminWorkflowPage from '@/pages/admin/AdminWorkflowPage'
 import AdminConnectorsPage from '@/pages/admin/AdminConnectorsPage'
 import AdminBranchesPage from '@/pages/admin/AdminBranchesPage'
@@ -93,6 +94,8 @@ export default function App() {
                 <Route index element={<Navigate to="orders" replace />} />
                 {/* The order board replaces the old /admin/orders grid; STAFF + ADMIN. */}
                 <Route path="orders" element={<OrderBoardPage />} />
+                {/* Flat cross-sprint order archive (ADMIN-only record view). */}
+                <Route path="order-archive" element={<RequireAdmin><AdminOrdersArchivePage /></RequireAdmin>} />
                 <Route path="media" element={<RequireAdmin><AdminMediaPage /></RequireAdmin>} />
                 <Route path="support" element={<RequireAdmin><AdminSupportPage /></RequireAdmin>} />
                 <Route path="users" element={<RequireAdmin><AdminUsersPage /></RequireAdmin>} />

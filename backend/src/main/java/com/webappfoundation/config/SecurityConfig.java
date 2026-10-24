@@ -41,6 +41,9 @@ public class SecurityConfig {
                         // board/stream, read a single order + its stage history, and change ticket status
                         // (advance stage, block/resume). Everything else under /admin/** stays ADMIN-only.
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/orders/board", "/api/v1/admin/orders/board/stream").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
+                        // The All-orders archive is a literal that would otherwise be swallowed by the STAFF
+                        // "/orders/*" rule below — pin it ADMIN-only FIRST so STAFF can't read the full record.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/orders/archive").hasAnyAuthority("ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/orders/*", "/api/v1/admin/orders/*/history").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/admin/orders/*/stage").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/orders/*/block", "/api/v1/admin/orders/*/resume").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")

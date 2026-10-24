@@ -487,20 +487,23 @@
           "SprintStatus", "OrderSprint", "OrderSprintRepository", "SprintService",
           "SprintDto", "UpsertSprintRequest", "CompleteSprintRequest", "AdminSprintController",
           "OrderBoardService", "OrderBoardStream", "OrderBoardChangedEvent",
-          "OrderBoardDto", "OrderCardDto", "OrderBoardDetailDto", "OrderStageEventDto"
+          "OrderBoardDto", "OrderCardDto", "OrderBoardDetailDto", "OrderStageEventDto", "OrderArchiveRowDto"
         ]
       },
       "frontend": {
         "modules": [
           "/types/sprint", "/services/sprintservice", "/hooks/sprinthooks",
-          "/pages/admin/orderboardpage", "/components/admin/board", "/components/requireboardaccess"
+          "/pages/admin/orderboardpage", "/pages/admin/adminordersarchivepage",
+          "/components/admin/board", "/components/requireboardaccess"
         ],
         "guards": ["RequireBoardAccess"],
         "fenced": [
-          "sprintService", "OrderBoardPage", "RequireBoardAccess",
-          "useOrderBoard", "useOrderBoardStream", "useStaffUsers"
+          "sprintService", "OrderBoardPage", "AdminOrdersArchivePage", "RequireBoardAccess",
+          "useOrderBoard", "useOrderBoardStream", "useStaffUsers", "useOrderArchive"
         ],
-        "pages": []
+        "pages": [
+          { "key": "ADMIN_ORDER_ARCHIVE", "gate": "ADMIN", "nav": true }
+        ]
       },
       "config": { "env": [], "compose": [] }
     }

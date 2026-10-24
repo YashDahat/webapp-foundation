@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { orderService } from '@/services/orderService';
 import { userService } from '@/services/userService';
 import { withToast } from '@/lib/apiToast';
-import type { BlockReason, OrderBoardDetailDto, OrderBoardDto, OrderDto, OrderStageEventDto } from '@/types/order';
+import type { BlockReason, OrderArchiveRowDto, OrderBoardDetailDto, OrderBoardDto, OrderDto, OrderStageEventDto } from '@/types/order';
 import type { UserDto } from '@/types/user';
 
 // ── Customer ──
@@ -100,6 +100,14 @@ export function useOrderHistory(id: number | null) {
     queryKey: ['order-history', id],
     queryFn: () => orderService.history(id as number),
     enabled: id != null,
+  });
+}
+
+/** The flat All-orders archive (cross-sprint / cross-workflow record). ADMIN-only. */
+export function useOrderArchive(filters?: { workflowCode?: string; sprintId?: number | null; branchId?: number | null }) {
+  return useQuery<OrderArchiveRowDto[]>({
+    queryKey: ['order-archive', filters?.workflowCode ?? null, filters?.sprintId ?? null, filters?.branchId ?? null],
+    queryFn: () => orderService.archive(filters),
   });
 }
 

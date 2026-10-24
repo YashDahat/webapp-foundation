@@ -1,5 +1,6 @@
 package com.webappfoundation.service;
 
+import com.webappfoundation.dto.OrderArchiveRowDto;
 import com.webappfoundation.dto.OrderBoardDetailDto;
 import com.webappfoundation.dto.OrderBoardDto;
 import com.webappfoundation.dto.OrderCardDto;
@@ -159,6 +160,58 @@ public class OrderBoardService {
                 .branches(branches)
                 .generatedAt(now)
                 .build();
+    }
+
+    // ── All-orders archive (flat, cross-sprint / cross-workflow record view) ──
+
+    /**
+     * Every order as a flat row, newest first, for the admin <b>All orders</b> archive — the full record the
+     * sprint-scoped board only shows a slice of. Optional filters narrow by workflow / sprint / branch (null =
+     * all); the frontend adds status + search filtering on top. ADMIN-only.
+     */
+    public List<OrderArchiveRowDto> archive(String workflowCode, Long sprintId, Long branchId) {
+        List<Order> orders = orderRepository.findAllByOrderByCreatedAtDesc().stream()
+                .filter(o -> workflowCode == null || workflowCode.equals(o.getWorkflowCode()))
+                .filter(o -> sprintId == null || sprintId.equals(o.getSprintId()))
+                .filter(o -> branchId == null || branchId.equals(o.getBranchId()))
+                .toList();
+        Map<Integer, String> names = customerNames(orders);
+        Map<String, String> workflowLabels = workflowRepository.findAll().stream()
+                .collect(Collectors.toMap(com.webappfoundation.model.Workflow::getCode,
+                        com.webappfoundation.model.Workflow::getLabel, (a, b) -> a));
+        Map<Long, String> sprintNames = sprintRepository.findAll().stream()
+                .collect(Collectors.toMap(OrderSprint::getId, OrderSprint::getName, (a, b) -> a));
+        Map<String, Map<String, String>> stageLabelsByWorkflow = new java.util.HashMap<>();
+
+        List<OrderArchiveRowDto> rows = new ArrayList<>();
+        for (Order o : orders) {
+            Map<String, String> stageLabels = stageLabelsByWorkflow.computeIfAbsent(o.getWorkflowCode(), wc ->
+                    workflowService.stages(wc).stream()
+                            .collect(Collectors.toMap(WorkflowStage::getCode, WorkflowStage::getLabel, (a, b) -> a)));
+            rows.add(OrderArchiveRowDto.builder()
+                    .id(o.getId())
+                    .orderNumber(o.getOrderNumber())
+                    .customerName(names.getOrDefault(o.getUserId(), fallbackName(o)))
+                    .workflowCode(o.getWorkflowCode())
+                    .workflowLabel(workflowLabels.getOrDefault(o.getWorkflowCode(), o.getWorkflowCode()))
+                    .stageCode(o.getCurrentStageCode())
+                    .stageLabel(stageLabels.getOrDefault(o.getCurrentStageCode(), o.getCurrentStageCode()))
+                    .blocked(o.isBlocked())
+                    .sprintId(o.getSprintId())
+                    .sprintName(o.getSprintId() == null ? null : sprintNames.get(o.getSprintId()))
+                    .paymentState(o.getPaymentState())
+                    .fulfillmentType(o.getFulfillmentType())
+                    .branchId(o.getBranchId())
+                    .branchName(o.getBranchName())
+                    .assignedStaffName(o.getAssignedStaffName())
+                    .total(o.getTotal())
+                    .currency(o.getCurrency())
+                    .carriedForward(o.isCarriedForward())
+                    .createdAt(o.getCreatedAt())
+                    .updatedAt(o.getUpdatedAt())
+                    .build());
+        }
+        return rows;
     }
 
     // ── Detail sheet ──

@@ -5,6 +5,7 @@ import com.webappfoundation.dto.AssignOrderRequest;
 import com.webappfoundation.dto.BlockOrderRequest;
 import com.webappfoundation.dto.BulkUploadResult;
 import com.webappfoundation.dto.CancelOrderRequest;
+import com.webappfoundation.dto.OrderArchiveRowDto;
 import com.webappfoundation.dto.OrderBoardDetailDto;
 import com.webappfoundation.dto.OrderBoardDto;
 import com.webappfoundation.dto.OrderDto;
@@ -60,6 +61,14 @@ public class AdminOrderController {
     @GetMapping("/board/stream")
     public SseEmitter stream(@RequestParam String workflowCode) {
         return orderBoardStream.subscribe(workflowCode);
+    }
+
+    /** The flat All-orders archive (cross-sprint / cross-workflow record). ADMIN-only — NOT in the STAFF allowlist. */
+    @GetMapping("/archive")
+    public List<OrderArchiveRowDto> archive(@RequestParam(required = false) String workflowCode,
+                                            @RequestParam(required = false) Long sprintId,
+                                            @RequestParam(required = false) Long branchId) {
+        return orderBoardService.archive(workflowCode, sprintId, branchId);
     }
 
     @GetMapping("/{id}/history")
