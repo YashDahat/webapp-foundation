@@ -25,7 +25,7 @@ them and, where noted, add your business content on top.
 | `/admin/media` | `pages/admin/AdminMediaPage.tsx` | `RequireAdmin` | Media library admin. |
 | `/admin/products` · `/admin/recommendations` | — | `RequireAdmin` | Catalog + recommendation admin (grids + bulk upload). |
 | `/admin/orders` | `pages/admin/OrderBoardPage.tsx` | board shell + `RequireAdmin` | **Order board** — admin kanban over the order spine (replaces the old grid). STAFF-accessible. See "Order board". |
-| `/admin/order-archive` | `pages/admin/AdminOrdersArchivePage.tsx` | `RequireAdmin` | **All orders** — flat cross-sprint / cross-workflow record (AdminDataGrid). ADMIN-only. See "Order board". |
+| `/admin/order-archive` | `pages/admin/AdminOrdersArchivePage.tsx` | `RequireAdmin` | **All orders** — flat cross-sprint / cross-workflow record (AdminDataGrid). ADMIN-only; reached via the board's "All orders" button (not the left nav), with "Back to board" to return. See "Order board". |
 | `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | The workflow builder (React Flow diagram) + connector toggles. |
 | `/admin/branches` · `/admin/feedback` | — | `RequireAdmin` | Branch admin (+ bulk) · read-only feedback grid. |
 | `/admin/reviews` | `pages/admin/AdminReviewsPage.tsx` | `RequireAdmin` | Product-review moderation grid (delete; no bulk). |

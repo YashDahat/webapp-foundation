@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import type { ColDef } from 'ag-grid-community';
+import { Button } from '@/components/ui/button';
 import { AdminDataGrid } from '@/components/admin/AdminDataGrid';
 import { useOrderArchive } from '@/hooks/orderHooks';
 import { useWorkflows } from '@/hooks/workflowHooks';
@@ -77,6 +80,9 @@ export default function AdminOrdersArchivePage() {
       <div className="flex items-center gap-2">
         <h1 className="text-2xl font-bold">All orders</h1>
         <Badge variant="secondary">{filtered.length}</Badge>
+        <Button variant="outline" size="sm" className="ml-auto" asChild data-testid="archive-back-to-board">
+          <Link to="/admin/orders"><ArrowLeft className="mr-1 h-4 w-4" />Back to board</Link>
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

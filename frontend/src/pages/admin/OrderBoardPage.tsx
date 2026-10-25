@@ -5,7 +5,7 @@ import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
   type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core';
-import { MapPin, Plus, Pencil, CheckCircle2 } from 'lucide-react';
+import { MapPin, Plus, Pencil, CheckCircle2, Archive } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useBranch } from '@/context/BranchContext';
 import { useWorkflows } from '@/hooks/workflowHooks';
@@ -249,6 +249,9 @@ export default function OrderBoardPage() {
             )}
             <Button size="sm" onClick={() => navigate('/products')} data-testid="board-new-order">
               <Plus className="mr-1 h-4 w-4" />New order
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin/order-archive')} data-testid="board-all-orders">
+              <Archive className="mr-1 h-4 w-4" />All orders
             </Button>
             <BulkUploadDialog
               title="Bulk upload orders"

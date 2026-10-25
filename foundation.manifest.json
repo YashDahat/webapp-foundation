@@ -502,7 +502,7 @@
           "useOrderBoard", "useOrderBoardStream", "useStaffUsers", "useOrderArchive"
         ],
         "pages": [
-          { "key": "ADMIN_ORDER_ARCHIVE", "gate": "ADMIN", "nav": true }
+          { "key": "ADMIN_ORDER_ARCHIVE", "gate": "ADMIN", "nav": false }
         ]
       },
       "config": { "env": [], "compose": [] }
