@@ -508,7 +508,7 @@ import AddressBook from '@/components/AddressBook';                        // ac
 import { feedbackService } from '@/services/feedbackService';
 import { useSubmitFeedback, useAdminFeedback } from '@/hooks/feedbackHooks';
 import type { OrderFeedbackDto, CreateFeedbackRequest } from '@/types/feedback';
-import FeedbackForm from '@/components/FeedbackForm';                      // 1–5 stars + optional comment; render while !order.feedbackSubmitted
+import FeedbackForm from '@/components/FeedbackForm';                      // props { orderId }; big "How did we do?" takeover dialog: 1–5 rating cards + optional comment. Render while !order.feedbackSubmitted — auto-opens and is NON-dismissible (no close/Esc/backdrop); only a successful submit closes it.
 ```
 
 ## Product reviews — `@/services/reviewService`, `@/hooks/reviewHooks`

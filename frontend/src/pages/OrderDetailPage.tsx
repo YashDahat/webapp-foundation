@@ -96,10 +96,45 @@ export default function OrderDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="text-sm text-muted-foreground">
-        Fulfilment: {order.fulfillmentType === 'SELF_PICKUP' ? 'Self-pickup' : 'Delivery'}
-        {order.paymentMode === 'PAY_AT_COUNTER' ? ' · Pay at counter' : ''}
-      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Fulfilment</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Method</span>
+            <span>{order.fulfillmentType === 'SELF_PICKUP' ? 'Self-pickup' : 'Delivery'}</span>
+          </div>
+          {order.branchName && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Outlet</span>
+              <span>{order.branchName}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Payment</span>
+            <span>{order.paymentMode === 'PAY_AT_COUNTER' ? 'Pay at counter' : 'Online'}</span>
+          </div>
+          {order.fulfillmentType === 'DELIVERY' && order.shippingAddress && (
+            <div className="border-t pt-2">
+              <p className="mb-1 text-muted-foreground">Delivery address</p>
+              <address className="not-italic">
+                {(order.shippingAddress.contactName || order.shippingAddress.phone) && (
+                  <div>
+                    {order.shippingAddress.contactName}
+                    {order.shippingAddress.contactName && order.shippingAddress.phone ? ' · ' : ''}
+                    {order.shippingAddress.phone}
+                  </div>
+                )}
+                {order.shippingAddress.line1 && <div>{order.shippingAddress.line1}</div>}
+                {order.shippingAddress.line2 && <div>{order.shippingAddress.line2}</div>}
+                <div>
+                  {[order.shippingAddress.city, order.shippingAddress.state, order.shippingAddress.pincode]
+                    .filter(Boolean).join(', ')}
+                </div>
+              </address>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {!order.feedbackSubmitted && <FeedbackForm orderId={order.id} />}
 
