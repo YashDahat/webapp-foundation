@@ -101,8 +101,10 @@ cart and the signature still verifies.
 server-computed `total`, auditing `ORDER_PAYMENT_MISMATCH` on mismatch — so a cut-price gateway order
 opened against an order's `referenceId` can never mark it paid. The legit path (`placeOrder`) already
 derives the amount server-side; `PaymentService` stays business-agnostic (no order dependency). The
-`## Payments` contract card documents the enforced rules + the consumer obligation. Compile-verified;
-runtime/test (T3) verification pending. *Follow-up:* consider retiring the standalone public
+`## Payments` contract card documents the enforced rules + the consumer obligation. **Test-proven:**
+`SecurityHardeningTest` (T3) confirms anonymous `create-order` is denied (401/403); the amount-binding
+guard (`onPaymentCaptured`) is logic-verified — a dedicated order-flow test is a tracked follow-up.
+*Follow-up:* consider retiring the standalone public
 `create-order` endpoint (the foundation flow uses `placeOrder`), tracked separately to avoid a
 fenced-endpoint removal in this pass.
 
@@ -128,7 +130,7 @@ anyone can POST a forged `payment.captured` and mark arbitrary orders paid. The 
 **Status:** ◐ Implemented on `feat/security-hardening` — `RazorpayPaymentGateway.verifyWebhook()` now
 returns `allowUnsigned` (default **false**) instead of `true` when no secret is set; the fenced
 `PaymentGateway` javadoc now mandates fail-closed. Dev opts in via `razorpay.webhook.allow-unsigned`.
-Compile-verified; runtime/test (T4) verification pending.
+**Test-proven:** `RazorpayWebhookFailClosedTest` (T4) green (3 cases).
 
 ---
 
@@ -269,7 +271,8 @@ is cross-origin and will be blocked until CORS is configured.
 **Status:** ◐ Implemented on `feat/security-hardening` — `SecurityConfig` adds a strict
 `CorsConfigurationSource` from `app.cors.allowed-origins` (comma-split, credentials on, no `*`),
 wired via `http.cors(...)`; `APP_CORS_ALLOWED_ORIGINS` added to the auth `config.env` in the manifest
-and to `.env.example`. Compile-verified; runtime/test (TA) verification pending.
+and to `.env.example`. **Test-proven:** `SecurityHardeningTest` (TA) green — disallowed origin gets no
+ACAO header; allowed origin is echoed exactly (never `*`).
 
 ### B. 🟠 S3 frontend bucket must be private + CloudFront OAC
 
@@ -411,8 +414,8 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 |----|---------|-------------|----------------------------|--------|
 | T1 | #1 TLS | `curl -I http://<host>/` and hit the API over `http://`. Run SSL Labs / `testssl.sh` against the LB. | HTTP 301→HTTPS; HSTS header present; no plaintext endpoint reachable; TLS 1.2+ only. | ☐ |
 | T2 | #2 JWT default | Boot the app in `prod` profile with `JWT_SECRET` unset. Separately, forge a token with the committed demo key and call `/api/v1/admin/users`. | App refuses to start without `JWT_SECRET`; token signed with the old demo key is rejected (401). | ☐ |
-| T3 | #3 Payment amount | `POST /api/v1/payments/create-order` unauthenticated and with an `amount` far below the real order total; complete `/verify`. | create-order requires auth (401 anon); captured amount is bound server-side; mismatch → verification rejected, order not marked paid. | ☐ |
-| T4 | #4 Webhook fail-open | With `RAZORPAY_WEBHOOK_SECRET` unset, `POST /api/v1/payments/webhook` a forged `payment.captured`. Then POST with a wrong `X-Razorpay-Signature`. | No secret → app refuses to start (or rejects webhook); bad signature → 400, no payment captured. | ☐ |
+| T3 | #3 Payment amount | `POST /api/v1/payments/create-order` unauthenticated and with an `amount` far below the real order total; complete `/verify`. | create-order requires auth (401/403 anon); captured amount is bound server-side; mismatch → settlement refused, order not marked paid. | ✓ auth proven (`SecurityHardeningTest.createOrder_isRejectedForAnonymousCaller`); amount-binding guard logic-verified, order-flow test pending |
+| T4 | #4 Webhook fail-open | Unit-test `RazorpayPaymentGateway.verifyWebhook`: no secret + allowUnsigned=false; no secret + allowUnsigned=true; configured secret + forged signature. | No secret → rejected (fail closed) unless unsigned explicitly allowed (dev); forged signature → rejected. | ✓ `RazorpayWebhookFailClosedTest` (3 cases) |
 | T5 | #5 Default admin | Deploy without overriding `ADMIN_PASSWORD`; attempt login with `changeme123`. | Prod refuses to seed a default password (fail-fast) or forces a reset on first login; default login fails. | ☐ |
 | T6 | #6 Rate limiting | Script 100+ rapid `/api/v1/auth/login` attempts with bad passwords for one account and from one IP. | Lockout / backoff after N failures (per account + per IP); WAF rate rule throttles the IP. | ☐ |
 | T7 | #7 Reset-token replay | Request a reset link; decode the JWT `exp`; use the token twice; use it after 20 min. | TTL ≤ 15 min; second use rejected (single-use); expired token rejected (401). | ☐ |
@@ -420,7 +423,7 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 | T9 | #9 Password policy | Register with `password1`, a 6-char value, and a known-breached common password. | Weak/common passwords rejected (400); minimum length + complexity enforced. | ☐ |
 | T10 | #10 Secrets | On the instance: `ls -l .env` (mode), `docker inspect` the container, try reading secrets as a non-root local user. Confirm app reads from SSM/Secrets Manager. | `.env` is `600`/owned by service user (or absent); secrets sourced from Secrets Manager; EBS encrypted at rest. | ☐ |
 | T11 | #11 Schema mgmt | Inspect startup logs for Hibernate DDL; check `flyway_schema_history` exists. | `ddl-auto=validate` in prod; schema applied via versioned Flyway migrations, no auto-mutation. | ☐ |
-| TA | A CORS | From a disallowed origin (browser or `curl -H "Origin: https://evil.example"`) call the API; inspect `Access-Control-Allow-Origin`. | Only the configured CloudFront origin is echoed; no `*`; disallowed origins blocked by the browser. | ☐ |
+| TA | A CORS | From a disallowed origin (browser or `curl -H "Origin: https://evil.example"`) call the API; inspect `Access-Control-Allow-Origin`. | Only the configured origin is echoed; no `*`; disallowed origins get no ACAO header. | ✓ `SecurityHardeningTest.cors_disallowedOrigin_isNotEchoed` + `cors_allowedOrigin_isEchoedAndNeverWildcard` |
 | TB | B S3 bucket | `curl` the S3 bucket REST/website URL directly; check Block Public Access + bucket policy. | Direct bucket access denied; content served only via CloudFront (OAC) over HTTPS. | ☐ |
 | TC | C Instance exposure | External port scan of the EC2 (`nmap`); attempt `:8080`, `:5432`, `:22` from the internet; query IMDS from inside the app host. | Only LB→8080 reachable; 5432/22 closed to the internet; IMDSv2-only (IMDSv1 token-less call fails). | ☐ |
 | TP1 | P1 S3 creds | Blank `S3_ACCESS_KEY/SECRET`, attach an IAM instance role, exercise media upload/download. | S3 works via the instance role (DefaultCredentialsProvider) with no static keys and no code change. | ☐ |
@@ -432,24 +435,30 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 > (MockMvc / Testcontainers) so they re-run on every build; T1, TB, TC, T10 are infra checks suited
 > to a deployment smoke test; T6 and the RDS swap (TP3) are best run against a staging environment.
 
-### Automated suite — `SecurityHardeningTest`
+### Automated suite — `SecurityHardeningTest` + `RazorpayWebhookFailClosedTest`
 
-The automatable rows (T3, T4, T7, T8, T9, TA) are encoded as MockMvc integration tests at
-`backend/src/test/java/com/webappfoundation/security/SecurityHardeningTest.java`. Each test asserts
-the **target (post-fix) secure behaviour** and is annotated `@Disabled` with a reason naming its
-finding, so the suite is **build-safe on the current un-hardened code** (a fully-disabled class never
-starts the Spring context).
+The automatable rows live in two test classes under `backend/src/test/java/com/webappfoundation/security/`:
+
+- **`SecurityHardeningTest`** — `@SpringBootTest` + `@ActiveProfiles("test")` MockMvc suite. **Enabled
+  and passing:** T3 (payment auth), TA (CORS allow/deny, no wildcard). **Still `@Disabled`** pending
+  their fixes: T7 (#7), T8 (#8), T9 (#9).
+- **`RazorpayWebhookFailClosedTest`** — focused unit test for T4 (#4): no-secret → reject unless
+  unsigned explicitly allowed; configured-secret + forged signature → reject. (Unit, not endpoint,
+  because the `test` profile uses the demo gateway.)
+
+**Test profile / datastore.** `src/test/resources/application-test.properties` runs the full context
+on **in-memory H2 (PostgreSQL mode)** — no Postgres/Docker — and supplies test-only secrets so the
+fail-fast startup checks pass. `com.h2database:h2` is a test-scope dependency.
 
 **Enable-per-fix workflow.** When finding #N lands, delete the `@Disabled` on its test **in the same
 commit** as the fix (and its contract-card / manifest sync). A re-enabled test that fails means the
-fix is incomplete. Before enabling, add a test datastore (Testcontainers Postgres or H2 via
-`application-test.properties`) and a `test` profile so the full context boots without the dev
-MinIO/SMTP services.
+fix is incomplete.
 
-**Verified:** `mvn -DskipTests test-compile` passes (the suite compiles). This project is on Spring
-Boot **4.1.0** (Spring Framework 7), which matters for two imports: `@AutoConfigureMockMvc` now lives
-at `org.springframework.boot.webmvc.test.autoconfigure` (moved from `…test.autoconfigure.web.servlet`),
-while the classic `MockMvcRequestBuilders` / `MockMvcResultMatchers` fluent API is unchanged.
+**Verified:** `mvn test -Dtest=SecurityHardeningTest,RazorpayWebhookFailClosedTest` is green — T3, TA,
+T4 pass; T7/T8/T9 skipped (disabled). This project is on Spring Boot **4.1.0** (Spring Framework 7):
+`@AutoConfigureMockMvc` lives at `org.springframework.boot.webmvc.test.autoconfigure` (moved from
+`…test.autoconfigure.web.servlet`); the classic `MockMvcRequestBuilders`/`MockMvcResultMatchers` API
+is unchanged.
 
 > **Note — no prior regression net.** There was no `src/test` tree at all, so no automated test ran
 > before this — itself a hardening gap. (The pom's `spring-boot-starter-webmvc-test` etc. are *valid*
