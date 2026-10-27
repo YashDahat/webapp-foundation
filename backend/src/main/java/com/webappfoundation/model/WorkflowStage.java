@@ -65,4 +65,7 @@ public class WorkflowStage {
 
     /** For PARTIAL (0-100); ignored for FULL/NONE. */
     private Integer refundPercent;
+
+    /** Order-board SLA target in minutes for time-in-stage; "stuck" = time-in-stage &gt; target. Nullable = no target. */
+    private Integer targetMinutes;
 }

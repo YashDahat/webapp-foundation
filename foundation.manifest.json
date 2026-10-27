@@ -340,6 +340,32 @@
       "config": { "env": [], "compose": [] }
     },
     {
+      "id": "events",
+      "core": false,
+      "requires": ["catalog", "inventory", "orders"],
+      "backend": {
+        "controllers": ["EventController.java", "admin/AdminEventController.java"],
+        "packages": [],
+        "fenced": [
+          "Event", "EventTier", "EventDto", "EventTierDto", "UpsertEventRequest",
+          "EventRepository", "EventTierRepository", "EventService",
+          "EventCatalogResolver", "EventInventoryProvider",
+          "EventController", "AdminEventController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/types/event", "/services/eventservice", "/hooks/eventhooks"],
+        "guards": [],
+        "fenced": ["eventService"],
+        "pages": [
+          { "key": "EVENTS", "gate": "PUBLIC", "nav": true },
+          { "key": "EVENT_DETAIL", "gate": "PUBLIC", "nav": false },
+          { "key": "ADMIN_EVENTS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
       "id": "workflow-connectors",
       "core": false,
       "requires": ["email"],
@@ -470,6 +496,39 @@
         "fenced": ["reviewService", "ProductReviews"],
         "pages": [
           { "key": "ADMIN_REVIEWS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "order-board",
+      "core": false,
+      "requires": ["orders", "branches"],
+      "backend": {
+        "controllers": ["admin/AdminSprintController.java"],
+        "packages": [],
+        "fenced": [
+          "OrderStageEvent", "OrderStageEventRepository", "BlockReason",
+          "BlockOrderRequest", "AssignOrderRequest", "RefundOrderRequest", "WorkflowStageMappingRequest",
+          "SprintStatus", "OrderSprint", "OrderSprintRepository", "SprintService",
+          "SprintDto", "UpsertSprintRequest", "CompleteSprintRequest", "AdminSprintController",
+          "OrderBoardService", "OrderBoardStream", "OrderBoardChangedEvent",
+          "OrderBoardDto", "OrderCardDto", "OrderBoardDetailDto", "OrderStageEventDto", "OrderArchiveRowDto"
+        ]
+      },
+      "frontend": {
+        "modules": [
+          "/types/sprint", "/services/sprintservice", "/hooks/sprinthooks",
+          "/pages/admin/orderboardpage", "/pages/admin/adminordersarchivepage",
+          "/components/admin/board", "/components/requireboardaccess"
+        ],
+        "guards": ["RequireBoardAccess"],
+        "fenced": [
+          "sprintService", "OrderBoardPage", "AdminOrdersArchivePage", "RequireBoardAccess",
+          "useOrderBoard", "useOrderBoardStream", "useStaffUsers", "useOrderArchive"
+        ],
+        "pages": [
+          { "key": "ADMIN_ORDER_ARCHIVE", "gate": "ADMIN", "nav": false }
         ]
       },
       "config": { "env": [], "compose": [] }

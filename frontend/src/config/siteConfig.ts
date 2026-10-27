@@ -7,7 +7,7 @@ const siteConfig: SiteConfig = {
   header: {
     brandName: 'My Business',
     logoUrl: null,
-    navLinks: [{ label: 'Products', href: '/products' }, { label: 'Orders', href: '/orders' }],
+    navLinks: [{ label: 'Products', href: '/products' }, { label: 'Events', href: '/events' }, { label: 'Orders', href: '/orders' }],
     ctaButton: null,
     showAuth: true,
     // Colour classes omitted → SiteHeader's token defaults apply, so the header follows the

@@ -2,9 +2,11 @@ package com.webappfoundation.workflow;
 
 import com.webappfoundation.event.OrderStageEnteredEvent;
 import com.webappfoundation.model.Order;
+import com.webappfoundation.model.OrderStageEvent;
 import com.webappfoundation.model.TriggerType;
 import com.webappfoundation.model.WorkflowStage;
 import com.webappfoundation.repository.OrderRepository;
+import com.webappfoundation.repository.OrderStageEventRepository;
 import com.webappfoundation.repository.WorkflowStageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,12 +35,14 @@ public class WorkflowEngine {
 
     private final WorkflowStageRepository stageRepository;
     private final OrderRepository orderRepository;
+    private final OrderStageEventRepository stageEventRepository;
     private final ApplicationEventPublisher events;
 
     public WorkflowEngine(WorkflowStageRepository stageRepository, OrderRepository orderRepository,
-                          ApplicationEventPublisher events) {
+                          OrderStageEventRepository stageEventRepository, ApplicationEventPublisher events) {
         this.stageRepository = stageRepository;
         this.orderRepository = orderRepository;
+        this.stageEventRepository = stageEventRepository;
         this.events = events;
     }
 
@@ -62,9 +66,14 @@ public class WorkflowEngine {
             }
         }
 
+        Instant now = Instant.now();
         order.setCurrentStageCode(toStageCode);
-        order.setUpdatedAt(Instant.now());
+        order.setStageEnteredAt(now);   // reset the time-in-stage / "stuck" timer on every transition
+        order.setUpdatedAt(now);
         orderRepository.save(order);
+        stageEventRepository.save(OrderStageEvent.builder()
+                .orderId(order.getId()).stageCode(toStageCode).enteredAt(now).trigger(trigger)
+                .build());   // append to the stage-history timeline
         events.publishEvent(new OrderStageEnteredEvent(this, order.getId(), order.getWorkflowCode(), toStageCode, trigger));
         return true;
     }

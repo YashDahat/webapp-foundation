@@ -105,6 +105,8 @@ public class UserAdminService {
             String roleRaw = row.getOrDefault("role", "").trim().toUpperCase();
             if (roleRaw.equals("ADMIN")) {
                 role = Role.ADMIN; // SUPER_ADMIN is intentionally never created via import
+            } else if (roleRaw.equals("STAFF")) {
+                role = Role.STAFF; // operational order-board staff
             }
             userRepository.save(User.builder()
                     .firstName(row.getOrDefault("firstname", "").trim())

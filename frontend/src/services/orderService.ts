@@ -4,6 +4,7 @@ import apiClient from '@/api/client';
 import type { BulkUploadResult } from '@/types/bulkUpload';
 import type {
   OrderDto, PlaceOrderRequest, QuoteRequest, QuoteResponse,
+  OrderBoardDto, OrderBoardDetailDto, OrderStageEventDto, BlockReason, OrderArchiveRowDto,
 } from '@/types/order';
 
 export const orderService = {
@@ -39,12 +40,60 @@ export const orderService = {
     const { data } = await apiClient.get<OrderDto[]>('/api/v1/admin/orders');
     return data;
   },
-  adminGet: async (id: number): Promise<OrderDto> => {
-    const { data } = await apiClient.get<OrderDto>(`/api/v1/admin/orders/${id}`);
+  /** GET /api/v1/admin/orders/{id} — board detail: customer order + board overlay + stage-history timeline. */
+  adminGet: async (id: number): Promise<OrderBoardDetailDto> => {
+    const { data } = await apiClient.get<OrderBoardDetailDto>(`/api/v1/admin/orders/${id}`);
     return data;
   },
   advanceStage: async (id: number, stageCode: string): Promise<OrderDto> => {
     const { data } = await apiClient.put<OrderDto>(`/api/v1/admin/orders/${id}/stage`, { stageCode });
+    return data;
+  },
+
+  // ── Order board ──
+  /** GET /api/v1/admin/orders/board — kanban read model; null sprintId = active sprint, null branchId = all. */
+  board: async (workflowCode: string, sprintId?: number | null, branchId?: number | null): Promise<OrderBoardDto> => {
+    const { data } = await apiClient.get<OrderBoardDto>('/api/v1/admin/orders/board', {
+      params: { workflowCode, sprintId: sprintId ?? undefined, branchId: branchId ?? undefined },
+    });
+    return data;
+  },
+  /** GET /api/v1/admin/orders/{id}/history — the order's stage-history timeline. */
+  history: async (id: number): Promise<OrderStageEventDto[]> => {
+    const { data } = await apiClient.get<OrderStageEventDto[]>(`/api/v1/admin/orders/${id}/history`);
+    return data;
+  },
+  /** GET /api/v1/admin/orders/archive — flat cross-sprint / cross-workflow order record (ADMIN-only). */
+  archive: async (filters?: { workflowCode?: string; sprintId?: number | null; branchId?: number | null }): Promise<OrderArchiveRowDto[]> => {
+    const { data } = await apiClient.get<OrderArchiveRowDto[]>('/api/v1/admin/orders/archive', {
+      params: {
+        workflowCode: filters?.workflowCode || undefined,
+        sprintId: filters?.sprintId ?? undefined,
+        branchId: filters?.branchId ?? undefined,
+      },
+    });
+    return data;
+  },
+  block: async (id: number, reason: BlockReason, note?: string | null): Promise<OrderDto> => {
+    const { data } = await apiClient.post<OrderDto>(`/api/v1/admin/orders/${id}/block`, { reason, note });
+    return data;
+  },
+  resume: async (id: number): Promise<OrderDto> => {
+    const { data } = await apiClient.post<OrderDto>(`/api/v1/admin/orders/${id}/resume`);
+    return data;
+  },
+  /** PUT /api/v1/admin/orders/{id}/assignee — assign a STAFF user ({ userId: null } unassigns). */
+  assign: async (id: number, userId: number | null): Promise<OrderDto> => {
+    const { data } = await apiClient.put<OrderDto>(`/api/v1/admin/orders/${id}/assignee`, { userId });
+    return data;
+  },
+  sendPaymentLink: async (id: number): Promise<OrderDto> => {
+    const { data } = await apiClient.post<OrderDto>(`/api/v1/admin/orders/${id}/send-payment-link`);
+    return data;
+  },
+  /** POST /api/v1/admin/orders/{id}/refund — standalone goodwill refund (no cancel); null amount = full total. */
+  refund: async (id: number, amount?: number | null, reason?: string | null): Promise<OrderDto> => {
+    const { data } = await apiClient.post<OrderDto>(`/api/v1/admin/orders/${id}/refund`, { amount, reason });
     return data;
   },
   adminCancel: async (id: number, reason: string): Promise<OrderDto> => {

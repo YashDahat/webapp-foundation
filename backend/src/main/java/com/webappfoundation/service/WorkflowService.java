@@ -4,11 +4,17 @@ import com.webappfoundation.connector.builtin.EmailConnector;
 import com.webappfoundation.connector.demo.DemoDeliveryConnector;
 import com.webappfoundation.connector.demo.DemoRefundConnector;
 import com.webappfoundation.dto.WorkflowDto;
+import com.webappfoundation.dto.WorkflowStageMappingRequest;
 import com.webappfoundation.exception.ResourceNotFoundException;
+import com.webappfoundation.model.Order;
+import com.webappfoundation.model.OrderStageEvent;
 import com.webappfoundation.model.RefundPolicy;
+import com.webappfoundation.model.TriggerType;
 import com.webappfoundation.model.Workflow;
 import com.webappfoundation.model.WorkflowBinding;
 import com.webappfoundation.model.WorkflowStage;
+import com.webappfoundation.repository.OrderRepository;
+import com.webappfoundation.repository.OrderStageEventRepository;
 import com.webappfoundation.repository.WorkflowBindingRepository;
 import com.webappfoundation.repository.WorkflowRepository;
 import com.webappfoundation.repository.WorkflowStageRepository;
@@ -21,12 +27,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * Owns workflow definitions: seeds the default + food workflows on first boot, enforces invariants, and
+ * Owns workflow definitions: seeds the default + food + retail + services workflows on first boot, enforces invariants, and
  * provides the stage lookups the order spine uses (initial / onPaidEntry / cancelled). Every lookup is
  * scoped by {@code workflowCode} → stage (never a bare code, which may repeat across workflows).
  */
@@ -41,36 +52,48 @@ public class WorkflowService {
     private final WorkflowRepository workflowRepository;
     private final WorkflowStageRepository stageRepository;
     private final WorkflowBindingRepository bindingRepository;
+    private final OrderRepository orderRepository;
+    private final OrderStageEventRepository stageEventRepository;
+    private final AuditService auditService;
 
     public WorkflowService(WorkflowRepository workflowRepository, WorkflowStageRepository stageRepository,
-                           WorkflowBindingRepository bindingRepository) {
+                           WorkflowBindingRepository bindingRepository, OrderRepository orderRepository,
+                           OrderStageEventRepository stageEventRepository, AuditService auditService) {
         this.workflowRepository = workflowRepository;
         this.stageRepository = stageRepository;
         this.bindingRepository = bindingRepository;
+        this.orderRepository = orderRepository;
+        this.stageEventRepository = stageEventRepository;
+        this.auditService = auditService;
     }
 
     // ── Seeding ──
 
     @EventListener(ApplicationReadyEvent.class)
+    @org.springframework.core.annotation.Order(0) // seed workflows before SprintService.bootstrap (@Order 100) runs
     @Transactional
     public void seedDefaults() {
         if (workflowRepository.count() > 0) {
             return;
         }
-        log.info("Seeding default + food workflows");
+        log.info("Seeding default + food + retail + services + events workflows");
         seedDefaultWorkflow();
         seedFoodWorkflow();
+        seedRetailWorkflow();
+        seedServicesWorkflow();
+        seedEventsWorkflow();
     }
 
     private void seedDefaultWorkflow() {
         workflowRepository.save(Workflow.builder().code(DEFAULT_CODE).label("Default").isDefault(true).build());
         // Every stage cancellable=FULL (e-commerce can cancel/return any time for a full refund).
         // PLACED (initial) is intentionally unbound — an online order fires nothing before payment.
-        stage(DEFAULT_CODE, "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null);
-        WorkflowStage confirmed = stage(DEFAULT_CODE, "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null);
-        WorkflowStage ofd = stage(DEFAULT_CODE, "OUT_FOR_DELIVERY", "Out for delivery", 2, false, false, false, true, RefundPolicy.FULL, null);
-        stage(DEFAULT_CODE, "DELIVERED", "Delivered", 3, false, false, true, true, RefundPolicy.FULL, null);
-        WorkflowStage cancelled = stage(DEFAULT_CODE, CANCELLED_CODE, "Cancelled", 4, false, false, true, false, RefundPolicy.NONE, null);
+        // targetMinutes drive the board's "stuck" flag (time-in-stage past target); terminal stages have none.
+        stage(DEFAULT_CODE, "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage confirmed = stage(DEFAULT_CODE, "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, 120);
+        WorkflowStage ofd = stage(DEFAULT_CODE, "OUT_FOR_DELIVERY", "Out for delivery", 2, false, false, false, true, RefundPolicy.FULL, null, 2880);
+        stage(DEFAULT_CODE, "DELIVERED", "Delivered", 3, false, false, true, true, RefundPolicy.FULL, null, null);
+        WorkflowStage cancelled = stage(DEFAULT_CODE, CANCELLED_CODE, "Cancelled", 4, false, false, true, false, RefundPolicy.NONE, null, null);
 
         // PLACED (initial) has NO bindings — an online order fires nothing before payment.
         bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
@@ -85,14 +108,16 @@ public class WorkflowService {
     }
 
     private void seedFoodWorkflow() {
-        workflowRepository.save(Workflow.builder().code("food").label("Food delivery").isDefault(false).build());
+        workflowRepository.save(Workflow.builder().code("food").label("Food delivery").isDefault(false)
+                .staffRole("Rider").build());
         // Cancellation tightens as it progresses: FULL → PARTIAL(50) → not cancellable once out for delivery.
-        stage("food", "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null);
-        WorkflowStage confirmed = stage("food", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null);
-        WorkflowStage preparing = stage("food", "PREPARING", "Preparing", 2, false, false, false, true, RefundPolicy.PARTIAL, 50);
-        WorkflowStage ofd = stage("food", "OUT_FOR_DELIVERY", "Out for delivery", 3, false, false, false, false, RefundPolicy.NONE, null);
-        stage("food", "DELIVERED", "Delivered", 4, false, false, true, false, RefundPolicy.NONE, null);
-        WorkflowStage cancelled = stage("food", CANCELLED_CODE, "Cancelled", 5, false, false, true, false, RefundPolicy.NONE, null);
+        // Tight time targets (minutes) suit a fast kitchen-to-door lifecycle.
+        stage("food", "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null, 5);
+        WorkflowStage confirmed = stage("food", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, 10);
+        WorkflowStage preparing = stage("food", "PREPARING", "Preparing", 2, false, false, false, true, RefundPolicy.PARTIAL, 50, 20);
+        WorkflowStage ofd = stage("food", "OUT_FOR_DELIVERY", "Out for delivery", 3, false, false, false, false, RefundPolicy.NONE, null, 30);
+        stage("food", "DELIVERED", "Delivered", 4, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("food", CANCELLED_CODE, "Cancelled", 5, false, false, true, false, RefundPolicy.NONE, null, null);
 
         bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
         bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
@@ -106,13 +131,73 @@ public class WorkflowService {
         validateInvariants("food");
     }
 
+    /** Buy-online / pick-up-in-store retail: a packer prepares the order, then the customer collects it. */
+    private void seedRetailWorkflow() {
+        workflowRepository.save(Workflow.builder().code("retail").label("Retail pickup").isDefault(false)
+                .staffRole("Packer").build());
+        stage("retail", "PLACED", "Placed", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage confirmed = stage("retail", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, 60);
+        WorkflowStage packing = stage("retail", "PACKING", "Packing", 2, false, false, false, true, RefundPolicy.PARTIAL, 50, 120);
+        WorkflowStage ready = stage("retail", "READY_FOR_PICKUP", "Ready for pickup", 3, false, false, false, true, RefundPolicy.PARTIAL, 50, 1440);
+        stage("retail", "COLLECTED", "Collected", 4, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("retail", CANCELLED_CODE, "Cancelled", 5, false, false, true, false, RefundPolicy.NONE, null, null);
+
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(packing, EmailConnector.ID, EmailConnector.EMAIL_STORE, 0);
+        bind(ready, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0); // "your order is ready to collect"
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
+        validateInvariants("retail");
+    }
+
+    /** Field / appointment services: request → scheduled → technician on the job → completed. */
+    private void seedServicesWorkflow() {
+        workflowRepository.save(Workflow.builder().code("services").label("Services").isDefault(false)
+                .staffRole("Technician").build());
+        stage("services", "REQUESTED", "Requested", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage scheduled = stage("services", "SCHEDULED", "Scheduled", 1, false, true, false, true, RefundPolicy.FULL, null, 60);
+        WorkflowStage inProgress = stage("services", "IN_PROGRESS", "In progress", 2, false, false, false, true, RefundPolicy.PARTIAL, 50, 120);
+        stage("services", "COMPLETED", "Completed", 3, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("services", CANCELLED_CODE, "Cancelled", 4, false, false, true, false, RefundPolicy.NONE, null, null);
+
+        bind(scheduled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(scheduled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(inProgress, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
+        validateInvariants("services");
+    }
+
+    /** Event registration / ticketing: registered → confirmed (on payment) → attended. */
+    private void seedEventsWorkflow() {
+        workflowRepository.save(Workflow.builder().code("events").label("Events").isDefault(false)
+                .staffRole("Host").build());
+        // Free (₹0) sign-ups skip payment and advance straight to CONFIRMED (onPaidEntry). Cancellable with a
+        // full refund up to CONFIRMED; once ATTENDED/past it's terminal. No time targets (date-driven, not SLA).
+        stage("events", "REGISTERED", "Registered", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage confirmed = stage("events", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, null);
+        stage("events", "ATTENDED", "Attended", 2, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("events", CANCELLED_CODE, "Cancelled", 3, false, false, true, false, RefundPolicy.NONE, null, null);
+
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
+        validateInvariants("events");
+    }
+
     private WorkflowStage stage(String workflowCode, String code, String label, int ordinal, boolean initial,
                                 boolean onPaidEntry, boolean terminal, boolean cancellable,
-                                RefundPolicy refundPolicy, Integer refundPercent) {
+                                RefundPolicy refundPolicy, Integer refundPercent, Integer targetMinutes) {
         return stageRepository.save(WorkflowStage.builder()
                 .workflowCode(workflowCode).code(code).label(label).ordinal(ordinal)
                 .initial(initial).onPaidEntry(onPaidEntry).terminal(terminal)
                 .cancellable(cancellable).refundPolicy(refundPolicy).refundPercent(refundPercent)
+                .targetMinutes(targetMinutes)
                 .build());
     }
 
@@ -190,8 +275,13 @@ public class WorkflowService {
 
     /**
      * Replace a workflow's stages + bindings wholesale from the builder, then re-check invariants. Keeps the
-     * same {@code code} (in-flight orders reference it). Stage codes should be preserved by the admin so
-     * orders already at a stage stay valid.
+     * same {@code code} (in-flight orders reference it).
+     *
+     * <p><b>In-flight order migration (§6):</b> removing a stage <b>code</b> that live (non-terminal) orders
+     * occupy would strand those cards. So we diff old→new codes; for any removed code live orders sit in, we
+     * require {@code dto.stageMapping[removedCode] = survivingCode} (a surviving new code) and reject with 409
+     * otherwise. The remap is applied as a <b>migration, not a transition</b>: orders are re-stamped in bulk
+     * with NO connectors fired, a migration-flagged {@link OrderStageEvent} appended, and the change audited.
      */
     @Transactional
     public void replaceWorkflow(String code, WorkflowDto dto) {
@@ -199,9 +289,18 @@ public class WorkflowService {
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + code));
         if (dto.getLabel() != null && !dto.getLabel().isBlank()) {
             workflow.setLabel(dto.getLabel());
-            workflowRepository.save(workflow);
         }
+        if (dto.getStaffRole() != null) {
+            workflow.setStaffRole(dto.getStaffRole().isBlank() ? null : dto.getStaffRole());
+        }
+        workflowRepository.save(workflow);
+
         List<WorkflowStage> existing = stageRepository.findByWorkflowCodeOrderByOrdinal(code);
+        // Diff old→new codes and plan any required migration BEFORE touching the stage rows.
+        Set<String> newCodes = (dto.getStages() == null ? List.<WorkflowDto.StageDto>of() : dto.getStages())
+                .stream().map(WorkflowDto.StageDto::getCode).collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<String, String> remap = planStageMigration(code, existing, newCodes, dto.getStageMapping());
+
         for (WorkflowStage s : existing) {
             bindingRepository.deleteByStageId(s.getId());
         }
@@ -223,6 +322,7 @@ public class WorkflowService {
                     .cancellable(sd.isCancellable())
                     .refundPolicy(sd.getRefundPolicy() == null ? RefundPolicy.NONE : sd.getRefundPolicy())
                     .refundPercent(sd.getRefundPercent())
+                    .targetMinutes(sd.getTargetMinutes())
                     .build());
             int bOrdinal = 0;
             for (WorkflowDto.BindingDto bd : sd.getBindings() == null ? List.<WorkflowDto.BindingDto>of() : sd.getBindings()) {
@@ -237,6 +337,64 @@ public class WorkflowService {
             }
         }
         validateInvariants(code);
+        applyStageMigration(code, remap);
+    }
+
+    /**
+     * Compute the removed→surviving remap required to keep live orders valid, validating the admin-supplied
+     * mapping. Returns only the entries that actually need re-stamping (removed code with live orders). Throws
+     * 409 if a live order's removed stage has no valid mapping to a surviving code.
+     */
+    private Map<String, String> planStageMigration(String code, List<WorkflowStage> existing,
+                                                    Set<String> newCodes, WorkflowStageMappingRequest mapping) {
+        Map<String, Boolean> oldTerminalByCode = existing.stream()
+                .collect(Collectors.toMap(WorkflowStage::getCode, WorkflowStage::isTerminal, (a, b) -> a));
+        Map<String, String> supplied = mapping == null || mapping.getMapping() == null ? Map.of() : mapping.getMapping();
+        Map<String, String> remap = new HashMap<>();
+        for (Map.Entry<String, Boolean> e : oldTerminalByCode.entrySet()) {
+            String removedCode = e.getKey();
+            if (newCodes.contains(removedCode)) {
+                continue; // code preserved (additive change / label-only rename) — orders untouched
+            }
+            List<Order> live = orderRepository.findByWorkflowCodeAndCurrentStageCodeIn(code, List.of(removedCode))
+                    .stream().filter(o -> !isTerminalNow(oldTerminalByCode, o.getCurrentStageCode())).toList();
+            if (live.isEmpty()) {
+                continue; // no live order stranded by dropping this code
+            }
+            String target = supplied.get(removedCode);
+            if (target == null || !newCodes.contains(target)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Stage '" + removedCode + "' has " + live.size() + " live order(s) — supply a stageMapping to a surviving stage before removing it");
+            }
+            remap.put(removedCode, target);
+        }
+        return remap;
+    }
+
+    private boolean isTerminalNow(Map<String, Boolean> oldTerminalByCode, String stageCode) {
+        return Boolean.TRUE.equals(oldTerminalByCode.get(stageCode));
+    }
+
+    /** Bulk re-stamp stranded orders onto their surviving stage — a migration, NOT a transition (no connectors). */
+    private void applyStageMigration(String code, Map<String, String> remap) {
+        if (remap.isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        for (Map.Entry<String, String> e : remap.entrySet()) {
+            List<Order> orders = orderRepository.findByWorkflowCodeAndCurrentStageCodeIn(code, List.of(e.getKey()));
+            for (Order o : orders) {
+                o.setCurrentStageCode(e.getValue());
+                o.setStageEnteredAt(now);
+                o.setUpdatedAt(now);
+                orderRepository.save(o);
+                stageEventRepository.save(OrderStageEvent.builder()
+                        .orderId(o.getId()).stageCode(e.getValue()).enteredAt(now)
+                        .trigger(TriggerType.ADMIN).migration(true).build());
+            }
+            auditService.record(AuditActions.WORKFLOW_STAGE_MIGRATED, AuditActions.SUCCESS, "WORKFLOW", code,
+                    "remapped " + orders.size() + " order(s) " + e.getKey() + " -> " + e.getValue());
+        }
     }
 
     private WorkflowDto toDto(Workflow w) {
@@ -252,11 +410,12 @@ public class WorkflowService {
                     .id(s.getId()).code(s.getCode()).label(s.getLabel()).ordinal(s.getOrdinal())
                     .initial(s.isInitial()).onPaidEntry(s.isOnPaidEntry()).terminal(s.isTerminal())
                     .cancellable(s.isCancellable()).refundPolicy(s.getRefundPolicy()).refundPercent(s.getRefundPercent())
+                    .targetMinutes(s.getTargetMinutes())
                     .bindings(bindings)
                     .build());
         }
         return WorkflowDto.builder()
-                .code(w.getCode()).label(w.getLabel()).isDefault(w.isDefault()).stages(stages)
+                .code(w.getCode()).label(w.getLabel()).isDefault(w.isDefault()).staffRole(w.getStaffRole()).stages(stages)
                 .build();
     }
 }

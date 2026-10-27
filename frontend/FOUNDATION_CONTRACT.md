@@ -20,11 +20,15 @@ them and, where noted, add your business content on top.
 | `/checkout` | `pages/CheckoutPage.tsx` | `RequireAuth` | Working final-step checkout (see Checkout section) — usable **as-is**. |
 | `/gallery` | `pages/GalleryPage.tsx` | public | Public gallery view over the media library. |
 | `/products` · `/products/:slug` | `pages/ProductsPage.tsx` · `ProductDetailPage.tsx` | public | Default catalog grid + detail (variants, special features, Similar/Frequently-bought widgets, product reviews). |
+| `/events` · `/events/:slug` | `pages/EventsPage.tsx` · `EventDetailPage.tsx` | public | Events grid + poster/sign-up detail (guest count or ticket tiers → cart → checkout). See "Events". |
 | `/branches` | `pages/BranchesPage.tsx` | public | Outlet picker (also the header branch picker). |
 | `/orders` · `/orders/:id` | `pages/OrdersPage.tsx` · `OrderDetailPage.tsx` | `RequireAuth` | Order history + detail (cancel w/ refund preview, feedback form). |
 | `/admin/media` | `pages/admin/AdminMediaPage.tsx` | `RequireAdmin` | Media library admin. |
 | `/admin/products` · `/admin/recommendations` | — | `RequireAdmin` | Catalog + recommendation admin (grids + bulk upload). |
-| `/admin/orders` · `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | Order mgmt + the workflow builder (React Flow diagram) + connector toggles. |
+| `/admin/events` | `pages/admin/AdminEventsPage.tsx` | `RequireAdmin` | Events admin (grid + schedule/venue/capacity/tiers + bulk upload). |
+| `/admin/orders` | `pages/admin/OrderBoardPage.tsx` | board shell + `RequireAdmin` | **Order board** — admin kanban over the order spine (replaces the old grid). STAFF-accessible. See "Order board". |
+| `/admin/order-archive` | `pages/admin/AdminOrdersArchivePage.tsx` | `RequireAdmin` | **All orders** — flat cross-sprint / cross-workflow record (AdminDataGrid). ADMIN-only; reached via the board's "All orders" button (not the left nav), with "Back to board" to return. See "Order board". |
+| `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | The workflow builder (React Flow diagram) + connector toggles. |
 | `/admin/branches` · `/admin/feedback` | — | `RequireAdmin` | Branch admin (+ bulk) · read-only feedback grid. |
 | `/admin/reviews` | `pages/admin/AdminReviewsPage.tsx` | `RequireAdmin` | Product-review moderation grid (delete; no bulk). |
 
@@ -62,7 +66,7 @@ useAuth(): {
   logout: () => void;
 }
 
-export interface AuthUser { username: string; role: string }  // role is "SUPER_ADMIN" | "ADMIN" | "USER" (a string); import it from '@/context/AuthContext' — do NOT redeclare
+export interface AuthUser { username: string; role: string }  // role is "SUPER_ADMIN" | "ADMIN" | "STAFF" | "USER" (a string); import it from '@/context/AuthContext' — do NOT redeclare
 export interface LoginResult { twoFactorRequired: boolean; verificationRequired: boolean; challengeId?: string }  // from '@/context/AuthContext'
 // RegisterRequest is imported from '@/types/auth':
 type RegisterRequest = { firstName: string; lastName: string; email: string; phone: string; password: string };
@@ -78,6 +82,10 @@ type RegisterRequest = { firstName: string; lastName: string; email: string; pho
 - **Admin users** (SUPER_ADMIN/ADMIN): `import { userService } from '@/services/userService'` — `list()`,
   `changeRole(id, role)`, `remove(id)` (SUPER_ADMIN only), `bulkUpload(file)`; page `/admin/users`. `RequireAdmin`
   admits both ADMIN and SUPER_ADMIN.
+- **STAFF** is a restricted role below ADMIN: it may use **only the order board** (`/admin/orders`) — advance a
+  ticket's stage, block/resume, nothing else. `RequireAdmin` bounces STAFF to `/admin/orders`; the board shell is
+  gated by `@/components/RequireBoardAccess` (admits ADMIN/SUPER_ADMIN/**STAFF**), and `AdminLayout` collapses its
+  nav to just the board for STAFF. See the Order board section under "Orders & checkout".
 
 Gotchas (each was a real failure this run):
 - Use `isLoading`, **never** `loading`.
@@ -416,6 +424,26 @@ import RecommendationWidget from '@/components/recommendations/RecommendationWid
 Cart add (composite id + metadata so lines merge across grid/detail/widget):
 `addItem({ id: \`${itemType}:${itemId}\`, name, unitPrice: price, imageUrl, variantKey, metadata: { itemType, itemId } })`.
 
+## Events — `@/types/event`, `@/services/eventService`, `@/hooks/eventHooks`
+
+The `Event` sellable (`itemType="EVENT"`) ships PREBUILT — a dated, finite-capacity item. Do NOT rebuild the
+service/hooks/types. The detail page is an editorial split (brand-colour poster + "Reserve your seat" panel):
+a tier-less event picks a guest count, a tiered event picks per-tier quantities; "Sign up" / "Get tickets"
+adds EVENT lines to the cart and continues to `/checkout` (the ₹0 path confirms free sign-ups directly).
+
+```ts
+import { eventService } from '@/services/eventService';
+import { useEvents, useEvent, useEventBySlug, useAdminEvents,
+         useCreateEvent, useUpdateEvent, useDeleteEvent } from '@/hooks/eventHooks';
+import type { EventDto, EventTierDto, UpsertEventRequest, EventFilter } from '@/types/event';
+// EventDto: { id; name; slug; price; startsAt; endsAt?; salesCloseAt?; venueBranchId?; venueName?;
+//   capacity?; reserved?; available?; seatsLeft?; onSale; soldOut; tiers: EventTierDto[]; imageUrl?; images?;
+//   features?; category?; active; workflowCode? }  — seats-as-stock; tiered = pick a tier on the detail page.
+// useEvents(filter?: { category?; q?; branchId? }) — active events, soonest first.
+```
+Cart add (same composite-id contract as any sellable; a tier is the `variantKey`):
+`addItem({ id: \`EVENT:${event.id}\`, name, unitPrice, imageUrl, variantKey: String(tierId), metadata: { itemType: 'EVENT', itemId: event.id } }, qty)`.
+
 ## Orders & checkout — `@/services/orderService`, `@/hooks/orderHooks`, `@/types/order`
 
 The order spine ships PREBUILT. **`CheckoutPage` is now the real connector-aware flow** (fulfilment selector,
@@ -436,7 +464,48 @@ import { registerCheckoutConnector } from '@/connectors/registry';        // opt
 ```
 Admin workflow/connectors: `import { workflowService, connectorService } from '@/services/workflowService'` +
 `useWorkflows/useReplaceWorkflow/useConnectors/useUpdateConnector` from `@/hooks/workflowHooks`
-(`WorkflowDto` boolean `isDefault` serializes as **`default`**). The workflow builder diagram uses `@xyflow/react`.
+(`WorkflowDto` boolean `isDefault` serializes as **`default`**; `WorkflowDto.staffRole?`, `WorkflowStageDto.targetMinutes?`,
+and optional `stageMapping` for in-flight order migration). The workflow builder diagram uses `@xyflow/react`.
+
+## Order board & sprints — `pages/admin/OrderBoardPage.tsx`, `@/services/sprintService`, `@/hooks/sprintHooks`
+
+The admin **Order board** (`/admin/orders`) is a kanban over the fenced order spine — it **replaces** the old
+`AdminOrdersPage` grid (an intentional exception to the AdminDataGrid rule; tabular admin lists still use the grid).
+Columns are the selected workflow's stages (by ordinal) plus a synthetic **Blocked** and **Cancelled** column. Drag a
+card to advance (**next-stage only**, enforced in the UI), block, resume or cancel; click to open the detail sheet.
+Scoped by **workflow + sprint + branch** and live via **SSE** (polling fallback). Built with `@dnd-kit/core`.
+Do NOT rebuild the board, its hooks/services, or re-add a route — extend it.
+
+```ts
+import { orderService } from '@/services/orderService';
+// Board SDK (admin): board(workflowCode, sprintId?, branchId?) → OrderBoardDto; adminGet(id) → OrderBoardDetailDto;
+//   history(id); block(id, reason, note?); resume(id); assign(id, userId|null); sendPaymentLink(id); refund(id, amount?, reason?);
+//   archive({workflowCode?, sprintId?, branchId?}) → OrderArchiveRowDto[]  (flat cross-sprint record; backs the "All orders" page)
+import {
+  useOrderBoard, useOrderBoardDetail, useOrderHistory, useOrderBoardStream, useStaffUsers, useOrderArchive,
+  useBlockOrder, useResumeOrder, useAssignOrder, useSendPaymentLink, useRefundOrder,
+  useAdvanceStage, useAdminCancelOrder, useMarkPaid,
+} from '@/hooks/orderHooks';
+import type {
+  OrderBoardDto, BoardColumnDto, OrderCardDto, BoardFlagCounts, BoardBranchCount,
+  OrderBoardDetailDto, OrderStageEventDto, BlockReason, TriggerType, OrderArchiveRowDto,
+  BlockOrderRequest, AssignOrderRequest, RefundOrderRequest,
+} from '@/types/order';
+// useOrderBoardStream(workflowCode, onPush): SSE via fetch (EventSource can't send the JWT header); nudges a
+//   board refetch on each push. useOrderBoard polls (refetchInterval) as the fallback. All board writes go
+//   through withToast (errors auto-toast via the interceptor — no manual toast.error).
+
+import { sprintService } from '@/services/sprintService';
+import { useSprints, useCreateSprint, useUpdateSprint, useCompleteSprint } from '@/hooks/sprintHooks';
+import type { SprintDto, SprintStatus, UpsertSprintRequest, CompleteSprintRequest } from '@/types/sprint';
+// Sprints are per-workflow time-boxed batches (exactly one ACTIVE). complete() closes the active sprint, opens
+//   the next, and carries forward the ticked open orders. Closed sprints render the board read-only.
+
+// Board components (do NOT rebuild): @/components/admin/board/{OrderCard,BoardColumn,OrderDetailSheet,
+//   BlockDialog,CollectPaymentDialog,CompleteSprintDialog,EditSprintDialog}; helpers in board/boardUtils.ts.
+// Branch scope reuses @/context/BranchContext (useBranch) with an "All branches" (null) option; assignees are
+//   STAFF users (useStaffUsers). STAFF see a constrained board (advance/block/resume only — no secondary actions).
+```
 
 ## Branches & address book — `@/context/BranchContext`, `@/services/branchService`, `@/services/addressService`
 
@@ -461,7 +530,7 @@ import AddressBook from '@/components/AddressBook';                        // ac
 import { feedbackService } from '@/services/feedbackService';
 import { useSubmitFeedback, useAdminFeedback } from '@/hooks/feedbackHooks';
 import type { OrderFeedbackDto, CreateFeedbackRequest } from '@/types/feedback';
-import FeedbackForm from '@/components/FeedbackForm';                      // 1–5 stars + optional comment; render while !order.feedbackSubmitted
+import FeedbackForm from '@/components/FeedbackForm';                      // props { orderId }; big "How did we do?" takeover dialog: 1–5 rating cards + optional comment. Render while !order.feedbackSubmitted — auto-opens and is NON-dismissible (no close/Esc/backdrop); only a successful submit closes it.
 ```
 
 ## Product reviews — `@/services/reviewService`, `@/hooks/reviewHooks`

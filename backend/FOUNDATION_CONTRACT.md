@@ -17,7 +17,11 @@ class User {
   boolean emailVerified;      // set true after the signup OTP is confirmed; login is blocked until then
   boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts are server-internal)
 }
-enum Role { SUPER_ADMIN, ADMIN, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
+enum Role { SUPER_ADMIN, ADMIN, STAFF, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
+// STAFF = operational role below ADMIN. SecurityConfig grants it a NARROW /admin/** allowlist — only the order board:
+//   GET /orders/board(+/stream), GET /orders/{id}, GET /orders/{id}/history, PUT /orders/{id}/stage, POST /orders/{id}/block|resume.
+// STAFF may view the board and change ticket status (advance/block/resume) only — no cancel/refund/send-payment-link/create,
+// no sprints/workflow/users, no other admin area. Order-board assignees are STAFF users.
 
 interface UserRepository extends JpaRepository<User, Integer> {
   Optional<User> findByEmail(String email);
@@ -350,10 +354,49 @@ Endpoints — public: `GET /api/v1/products(?category=&q=&branchId=)`, `/product
 `GET /api/v1/recommendations?itemType=&itemId=&type=&branchId=` (→ `CatalogItemDto[]`). Admin:
 `GET/POST/PUT/DELETE /api/v1/admin/products` + `/bulk-upload`; `/api/v1/admin/recommendations` CRUD + `/bulk-upload`.
 
+## Events
+
+A dated, finite-capacity sellable (`itemType="EVENT"`) — a `Product` with a date + seats. Registration/
+ticketing runs on the normal order spine: `EventCatalogResolver` maps it to `CatalogItemDto` and
+`EventInventoryProvider` tracks seats via `InventoryService` (no new engine). Capacity is a shared pool
+(`capacity` null = unlimited) or per `EventTier` (GA/VIP/Early-bird); sales stop at `salesCloseAt`
+(defaults to `startsAt`). A free (₹0) event signs up directly through the ₹0 order path; paid/tiered events
+go through cart → checkout. Bound to the seeded **`events`** workflow (`REGISTERED → CONFIRMED(onPaidEntry)
+→ ATTENDED` + `CANCELLED`).
+
+```java
+class Event { Long id; String name; String slug; String description; BigDecimal price;
+  Instant startsAt; Instant endsAt; Instant salesCloseAt; Long venueBranchId;
+  Integer capacity; Integer reserved; List<EventTier> tiers;                 // capacity null = unlimited; tiered = seats per tier
+  String imageUrl; List<String> images; List<String> features; String category;
+  boolean active; String workflowCode; Instant createdAt; Instant updatedAt; }  // workflowCode default "events"
+class EventTier { Long id; String label; String sku; BigDecimal price; Integer stock; Integer reserved; }  // price null → inherit event price
+class EventDto  { /* detail/admin shape + computed available, seatsLeft, onSale, soldOut, venueName; tiers each with computed available */ }
+class EventTierDto { Long id; String label; String sku; BigDecimal price; Integer stock; Integer reserved; Integer available; }
+
+// EVENT itemType key on CatalogConstants.EVENT. ONE resolver + ONE inventory provider, zero engine edits.
+@Component class EventCatalogResolver implements CatalogItemResolver { }   // itemType "EVENT"; detailPath "/events/<slug>"; cartable = tier-less, on-sale, seats left; schedule/soldOut ride CatalogItemDto.attributes
+@Component class EventInventoryProvider implements InventoryProvider { }   // seats-as-stock; variantKey = tier id; atomic reserve, 409 on shortfall; branchId ignored (seats global to the event)
+
+class EventService {
+  List<EventDto> listActive(String category, String q, Long branchId);     // active, soonest first; branchId → that venue (+ unscoped)
+  EventDto getById(Long id); EventDto getBySlug(String slug);              // ResourceNotFoundException on miss
+  EventDto create(UpsertEventRequest); EventDto update(Long, UpsertEventRequest); void delete(Long);
+  BulkUploadResult bulkImport(MultipartFile);   // columns: name,price,category,startsAt,endsAt,capacity,venueBranchSlug,workflowCode
+}
+class UpsertEventRequest { String name; String slug; String description; BigDecimal price; String category;
+  Boolean active; String workflowCode; Instant startsAt; Instant endsAt; Instant salesCloseAt; Long venueBranchId;
+  Integer capacity; String imageUrl; List<String> images; List<String> features; List<TierInput> tiers;
+  record TierInput { Long id; String label; String sku; BigDecimal price; Integer stock; } }
+```
+Endpoints — public: `GET /api/v1/events(?category=&q=&branchId=)`, `/events/{id}`, `/events/slug/{slug}`.
+Admin: `GET/POST/PUT/DELETE /api/v1/admin/events` + `/bulk-upload`.
+
 ## Inventory
 
 Overselling is prevented by a per-type SPI; unlimited items are a no-op. Reserve/commit/release **only** via
-`InventoryService` — never decrement stock by hand. `ProductInventoryProvider` ships (`"PRODUCT"`).
+`InventoryService` — never decrement stock by hand. `ProductInventoryProvider` ships (`"PRODUCT"`),
+`EventInventoryProvider` (`"EVENT"`).
 
 ```java
 interface InventoryProvider {           // ONE @Component per itemType
@@ -382,6 +425,10 @@ class Order { Long id; Integer userId; String orderNumber; String referenceId; L
   FulfillmentType fulfillmentType; PaymentMode paymentMode; String workflowCode; String currentStageCode;
   PaymentState paymentState; BigDecimal subtotal; BigDecimal total; BigDecimal refundAmount; String cancelReason;
   String currency; Address shippingAddress; List<OrderItem> items; List<OrderAdjustment> adjustments;
+  // order-board fields (admin kanban; NEVER leaked into the customer OrderDto — board DTOs carry them):
+  Integer assignedUserId; String assignedStaffName; boolean blocked; BlockReason blockReason; String blockNote;
+  Instant blockedAt; Instant stageEnteredAt; boolean carriedForward; Long sprintId; String channel;
+  Long version;                                                            // @Version — optimistic lock; stale board move → 409
   Instant createdAt; Instant updatedAt; }                                  // table "orders"
 class OrderItem { Long id; String itemType; Long itemId; String variantKey; String variantLabel; String name; BigDecimal unitPrice; int quantity; String imageUrl; }
 class OrderAdjustment { String code; String label; BigDecimal amount; String connectorId; }   // embeddable
@@ -395,9 +442,15 @@ class OrderService {
   QuoteResponse quote(Integer userId, QuoteRequest req);
   List<OrderDto> myOrders(Integer userId); OrderDto get(Integer userId, Long id);   // ownership-checked
   List<OrderDto> all(); OrderDto getAdmin(Long id);
-  OrderDto advanceStage(Long id, String stageCode);              // admin, trigger=ADMIN
+  OrderDto advanceStage(Long id, String stageCode);              // admin, trigger=ADMIN. Payment guard: unpaid → terminal non-CANCELLED stage = 409
   OrderDto markPaid(Long id);                                    // settle a pay-at-counter pickup
   OrderDto cancel(Long orderId, Integer actingUserId, String reason, boolean adminOverride);  // stage-aware refund
+  // board mutations — guarded by Order.@Version (concurrent/stale move → 409 Conflict):
+  OrderDto block(Long id, BlockReason reason, String note);      // keep stage, freeze timer; terminal order → 409
+  OrderDto resume(Long id);                                      // shift stageEnteredAt by blocked duration (timer resumes)
+  OrderDto assign(Long id, Integer userId);                      // assign STAFF user (null = unassign); snapshots name
+  OrderDto sendPaymentLink(Long id);                             // email the owner a pay link for an AWAITING_PAYMENT order
+  OrderDto refund(Long id, BigDecimal amount, String reason);    // standalone goodwill refund (NOT a cancel) → REFUND_PENDING via refund connector; null amount = full
   BulkUploadResult bulkImport(MultipartFile);
   // @TransactionalEventListener(AFTER_COMMIT) onPaymentCaptured(PaymentCapturedEvent): mark PAID, commit stock, advance to onPaidEntry (idempotent)
   // @Scheduled sweepAbandonedReservations(): release AWAITING_PAYMENT holds past `inventory.reservation-ttl-minutes`
@@ -410,8 +463,12 @@ class QuoteResponse    { BigDecimal subtotal; List<Option> options; class Option
 class OrderDto         { /* Order fields as DTOs + boolean cancellable; BigDecimal refundPreview; boolean feedbackSubmitted; PaymentOrderResponse payment (online awaiting payment only) */ }
 ```
 Endpoints — customer (`@CurrentUser`): `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/{id}`,
-`POST /api/v1/orders/{id}/cancel`, `POST /api/v1/checkout/quote`. Admin: `GET /api/v1/admin/orders(/{id})`,
-`PUT /{id}/stage`, `POST /{id}/cancel`, `POST /{id}/mark-paid`, `POST /bulk-upload`.
+`POST /api/v1/orders/{id}/cancel`, `POST /api/v1/checkout/quote`. Admin: `GET /api/v1/admin/orders` (→ `List<OrderDto>`),
+`GET /api/v1/admin/orders/{id}` (→ `OrderBoardDetailDto` — the board detail sheet),
+`PUT /{id}/stage`, `POST /{id}/cancel`, `POST /{id}/mark-paid`, `POST /bulk-upload`, and board actions
+`POST /{id}/block` · `POST /{id}/resume` · `PUT /{id}/assignee` · `POST /{id}/send-payment-link` · `POST /{id}/refund`.
+`block`/`resume` are also permitted to `STAFF`; the rest stay ADMIN-only (see SecurityConfig). Board read endpoints
+(`GET /{id}` · `GET /{id}/history` · `GET /board` · `GET /board/stream`) are detailed in the **Order board & sprints** section.
 
 ## Order workflow & connectors
 
@@ -420,10 +477,11 @@ it — all editable at `/admin/workflow`, no engine edits. Attach external servi
 notifications) as **connector beans**; never call a third-party API inline from domain code.
 
 ```java
-class Workflow      { Long id; String code; String label; boolean isDefault; }    // seeded: "default", "food"
+class Workflow      { Long id; String code; String label; boolean isDefault; String staffRole; }   // staffRole = board label (e.g. "Rider"); seeded: "default","food","retail","services"
 class WorkflowStage { Long id; String workflowCode; String code; String label; int ordinal;
   boolean initial; boolean onPaidEntry; boolean terminal;
-  boolean cancellable; RefundPolicy refundPolicy; Integer refundPercent; }         // unique (workflowCode, code)
+  boolean cancellable; RefundPolicy refundPolicy; Integer refundPercent;
+  Integer targetMinutes; }                                                         // board SLA: "stuck" = time-in-stage > targetMinutes; unique (workflowCode, code)
 enum RefundPolicy { FULL, PARTIAL, NONE }
 class WorkflowBinding   { Long id; Long stageId; String connectorId; String actionCode; int ordinal; boolean enabled; Map<String,String> params; }  // keyed by stage ID, not code
 class WorkflowExecution { Long id; Long orderId; Long stageId; Long bindingId; String connectorId; String actionCode; ExecutionStatus status; String detail; Instant createdAt; Instant updatedAt; }  // dedupe ledger; unique (orderId,stageId,bindingId)
@@ -432,7 +490,11 @@ enum TriggerType { SYSTEM, PAYMENT, WEBHOOK, ADMIN, RETRY }
 
 class WorkflowEngine { boolean advance(Order order, String toStageCode, TriggerType trigger); }  // idempotent for SYSTEM/PAYMENT/WEBHOOK
 class StageActionDispatcher { /* @Async @TransactionalEventListener(AFTER_COMMIT): fans a stage's enabled bindings to connectors; dedupes SUCCESS via WorkflowExecution */ }
-class WorkflowService { /* seeds default+food, enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow() */ }
+class WorkflowService { /* seeds default+food(+retail+services), enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow() */ }
+// replaceWorkflow(code, WorkflowDto): WorkflowDto now carries staffRole + per-stage targetMinutes, and an optional
+//   stageMapping (WorkflowStageMappingRequest{ Map<String,String> mapping }). Removing a stage CODE that live
+//   (non-terminal) orders occupy REQUIRES mapping[removedCode]=survivingCode or the save is rejected 409; the
+//   remap is a migration (bulk re-stamp, NO connectors fired, migration-flagged OrderStageEvent, audited).
 
 // Connector SPI — connector/
 enum ConnectorCategory { SHIPPING, TAX, DISCOUNT, PAYMENT, FULFILLMENT, NOTIFICATION, OTHER }
@@ -447,6 +509,113 @@ class ConnectorRegistry { OrderConnector byId(String id); List<OrderConnector> a
 A new connector = ONE `@Component` implementing the relevant SPI(s) + declaring `actions()`; it then appears in
 `/admin/connectors` and the workflow builder automatically. Inbound: `POST /api/v1/connectors/{connectorId}/webhook`
 (public, per-connector verified). Admin: `GET/PUT /api/v1/admin/workflow(/{code})`, `GET/PUT /api/v1/admin/connectors(/{id})`.
+
+## Order board & sprints
+
+An admin kanban over the order spine (board = `/admin/orders`). Columns are the workflow stages (+ synthetic
+**Blocked** and **Cancelled**); moves drive `OrderService`/`WorkflowEngine` — never a hardcoded lifecycle.
+The board fields live on `Order` (above) and are **never** exposed on the customer `OrderDto`.
+
+```java
+enum BlockReason { OUT_OF_STOCK, CUSTOMER_UNREACHABLE, PAYMENT_ISSUE, STAFF_UNAVAILABLE, ADDRESS_ISSUE, OTHER }
+
+// Stage-history timeline (board detail panel). Appended by WorkflowEngine on every transition + at placement.
+// Block/resume/assign are NOT recorded here — they live in audit_log. migration=true marks a workflow-edit remap.
+class OrderStageEvent { Long id; Long orderId; String stageCode; Instant enteredAt; TriggerType trigger; Integer byUserId; boolean migration; }  // table "order_stage_event"
+interface OrderStageEventRepository extends JpaRepository<OrderStageEvent,Long> { List<OrderStageEvent> findByOrderIdOrderByEnteredAtAsc(Long orderId); }
+
+// WorkflowEngine.advance(...) now also: sets Order.stageEnteredAt = now (resets the time-in-stage/"stuck" timer)
+// and appends an OrderStageEvent. placeOrder seeds the timeline with the initial stage.
+
+// Board-mutation request DTOs (see OrderService.block/assign/refund):
+class BlockOrderRequest  { BlockReason reason; String note; }
+class AssignOrderRequest { Integer userId; }                       // null = unassign
+class RefundOrderRequest { BigDecimal amount; String reason; }     // null amount = full total
+```
+A concurrent/stale board move (someone already moved the card) fails the `Order.@Version` check and surfaces as
+**409 Conflict** (`GlobalExceptionHandler` maps `OptimisticLockingFailureException`) so the UI can refresh.
+
+**Board read model** — `OrderBoardService` assembles the kanban over the order spine (read-only; moves still go
+through `OrderService`/`WorkflowEngine`). Columns are the workflow stages in ordinal order (excluding the terminal
+`CANCELLED` stage) + a synthetic **Blocked** column + the **Cancelled** column. A blocked order shows in Blocked
+regardless of its stage; a cancelled one in Cancelled. `minutesInStage` freezes while blocked; `stuck` = past the
+stage's `targetMinutes` (never while blocked/terminal). Scope is `(workflowCode, sprintId?, branchId?)` — null
+`sprintId` = the active sprint, null `branchId` = **all branches** (and `branches[]` always carries the per-branch
+split for the whole sprint).
+
+```java
+class OrderStageEventDto { Long id; String stageCode; String stageLabel; Instant enteredAt; TriggerType trigger; Integer byUserId; boolean migration; }
+class OrderCardDto { Long id; String orderNumber; String customerName; BigDecimal total; String currency; int itemCount;
+  FulfillmentType fulfillmentType; PaymentMode paymentMode; PaymentState paymentState; Long branchId; String branchName;
+  Integer assignedUserId; String assignedStaffName; boolean blocked; BlockReason blockReason; String channel;
+  String stageCode; Instant stageEnteredAt; Instant blockedAt; Integer targetMinutes; long minutesInStage; boolean stuck;
+  boolean carriedForward; Instant createdAt; }
+class OrderBoardDto { String workflowCode; String workflowLabel; String staffRole; SprintDto sprint; Long branchId;
+  List<Column> columns; FlagCounts flags; List<BranchCount> branches; Instant generatedAt;
+  class Column { String kind; /* STAGE|BLOCKED|CANCELLED */ String stageCode; String label; Integer ordinal; Integer targetMinutes; int count; int stuckCount; List<OrderCardDto> cards; }
+  class FlagCounts { int blocked; int stuck; int unpaid; int unassigned; }
+  class BranchCount { Long branchId; String branchName; int count; } }
+// detail-sheet model: the customer OrderDto + the board-only overlay + the stage-history timeline (one fetch).
+class OrderBoardDetailDto { OrderDto order; String customerName; String stageLabel; Integer assignedUserId; String assignedStaffName;
+  boolean blocked; BlockReason blockReason; String blockNote; Instant blockedAt; Instant stageEnteredAt; Integer targetMinutes;
+  long minutesInStage; boolean stuck; boolean carriedForward; Long sprintId; String channel; List<OrderStageEventDto> timeline; }
+
+// Flat cross-sprint / cross-workflow record row for the admin "All orders" archive (ADMIN-only).
+class OrderArchiveRowDto { Long id; String orderNumber; String customerName; String workflowCode; String workflowLabel;
+  String stageCode; String stageLabel; boolean blocked; Long sprintId; String sprintName; PaymentState paymentState;
+  FulfillmentType fulfillmentType; Long branchId; String branchName; String assignedStaffName; BigDecimal total;
+  String currency; boolean carriedForward; Instant createdAt; Instant updatedAt; }
+
+class OrderBoardService {
+  OrderBoardDto board(String workflowCode, Long sprintId, Long branchId);
+  OrderBoardDetailDto detail(Long id);                 // admin GET /orders/{id}
+  List<OrderStageEventDto> history(Long id);
+  List<OrderArchiveRowDto> archive(String workflowCode, Long sprintId, Long branchId);  // all orders, newest first
+}
+// OrderBoardStream (@Component): holds per-workflow SseEmitters and, AFTER_COMMIT, pushes a "board" refresh event
+//   on OrderStageEnteredEvent (stage move) or OrderBoardChangedEvent (block/resume/assign/refund/mark-paid/placement).
+```
+**Board read endpoints** (`GET`, STAFF-permitted — see SecurityConfig): `GET /api/v1/admin/orders/board?workflowCode=&sprintId=&branchId=`
+→ `OrderBoardDto`; `GET /orders/board/stream?workflowCode=` → SSE (`SseEmitter`; `board` events = refetch nudge, polling
+is the fallback); `GET /orders/{id}` → `OrderBoardDetailDto`; `GET /orders/{id}/history` → `List<OrderStageEventDto>`.
+**All-orders archive** (`GET /api/v1/admin/orders/archive?workflowCode=&sprintId=&branchId=` → `List<OrderArchiveRowDto>`,
+**ADMIN-only** — pinned ahead of the STAFF `/orders/*` rule in SecurityConfig so STAFF can't read the full record):
+the flat cross-sprint record view behind the admin "All orders" page.
+
+**Sprints** — time-boxed batches the board groups cards by, **per workflow** (branch is a filter within a sprint,
+not its own sprint). Orders join the workflow's `ACTIVE` sprint at `placeOrder` (`Order.sprintId`). Invariant:
+**at most one `ACTIVE` sprint per workflow**. On boot `SprintService.bootstrap()` (runs after workflow seeding)
+ensures each workflow has one active sprint and adopts orphan (null-`sprintId`) orders into it.
+
+```java
+enum SprintStatus { ACTIVE, CLOSED }
+
+class OrderSprint { Long id; String workflowCode; String name; LocalDate startsOn; LocalDate endsOn;
+  SprintStatus status; Instant createdAt; }                          // table "order_sprint"
+interface OrderSprintRepository extends JpaRepository<OrderSprint,Long> {
+  List<OrderSprint> findByWorkflowCodeOrderByCreatedAtDesc(String workflowCode);
+  Optional<OrderSprint> findFirstByWorkflowCodeAndStatusOrderByCreatedAtDesc(String workflowCode, SprintStatus status);
+  List<OrderSprint> findByWorkflowCodeAndStatus(String workflowCode, SprintStatus status); }
+
+class SprintService {
+  List<SprintDto> list(String workflowCode);
+  OrderSprint activeSprint(String workflowCode);                     // null if none
+  Long activeSprintId(String workflowCode);                          // for OrderService.placeOrder
+  SprintDto upsert(UpsertSprintRequest req);                         // id==null creates ACTIVE (409 if one already active); else edits name/dates
+  SprintDto complete(Long id, CompleteSprintRequest req);            // close current, open next, carry forward ticked open orders
+}
+
+// DTOs
+class SprintDto            { Long id; String workflowCode; String name; LocalDate startsOn; LocalDate endsOn; SprintStatus status; Instant createdAt; }
+class UpsertSprintRequest  { Long id; String workflowCode; String name; LocalDate startsOn; LocalDate endsOn; }
+class CompleteSprintRequest{ String nextName; LocalDate nextStartsOn; LocalDate nextEndsOn; List<Long> carryForwardOrderIds; }
+```
+Completing a sprint closes it (`CLOSED`), opens the next `ACTIVE` sprint, and re-points the ticked open (non-terminal)
+orders onto it (`Order.carriedForward=true`), keeping their stage/history/blocked state. Audited
+(`SPRINT_COMPLETED`, `ORDER_CARRIED_FORWARD`).
+
+**Admin sprint endpoints** (`/api/v1/admin/sprints`, ADMIN-only — not in the STAFF allowlist):
+`GET /sprints?workflowCode=`, `POST /sprints` (create), `PUT /sprints/{id}` (edit), `POST /sprints/{id}/complete`.
 
 ## Branches & address book
 

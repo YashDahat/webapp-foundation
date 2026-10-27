@@ -108,13 +108,22 @@ steps 1–13). Each row is **Feature name · Action performed · Expected outcom
 
 | Feature name | Action performed | Expected outcome |
 |---|---|---|
-| Seeding | First boot (empty DB) | `default` + `food` workflows seeded with stages, policies, and bindings. |
+| Seeding | First boot (empty DB) | `default` + `food` + `retail` + `services` workflows seeded, each with stages, refund policies, and connector bindings. |
 | Stage dispatch | Order enters a stage with bindings | Each enabled binding runs its connector action; recorded as `WorkflowExecution` rows (SUCCESS/FAILED). |
 | Email actions | onPaidEntry stage (CONFIRMED) entered | `email.customer` + `email.store` fire (visible in Mailpit at http://localhost:8025). |
 | Inbound webhook | `POST /api/v1/connectors/delivery.demo/webhook` body `{"orderId":N,"stage":"OUT_FOR_DELIVERY"}` | Order advances; OUT_FOR_DELIVERY bindings fire (delivery.initiate + emails). |
 | Idempotency / dedupe | Re-send the same webhook | No-op; `WorkflowExecution` count unchanged (no double email/ship/refund). |
 | Isolation | One bound action fails | Others still run; failure recorded `FAILED` with detail. |
 | New connector | Add a `@Component` implementing an SPI + `actions()` | Appears in `/admin/connectors` + the workflow builder with no engine edits. |
+
+> **Inspecting `WorkflowExecution` rows.** These are **not exposed by any API** — the admin order detail
+> (`GET /api/v1/admin/orders/{id}`) returns the stage-history `timeline` (an `OrderStageEvent` projection), not
+> the connector executions. To verify dispatch / dedupe / isolation (rows 2, 5, 6) read the table directly:
+> `docker compose exec -T db psql -U postgres -d webappfoundation -c "select order_id, connector_id, action_code, status, detail from workflow_execution order by id;"`
+> Dedupe is keyed on `(orderId, stageId, bindingId)` — a re-fire leaves the row count unchanged. Seeding (row 1)
+> only runs when the workflow table is **empty**, so verifying it on a first boot needs a volume wipe
+> (`docker compose down -v`); against an existing DB you are checking the already-seeded state, which may reflect
+> an older seed if the schema's seed logic has since changed.
 
 ## 8. Admin — workflow builder & diagram (`/admin/workflow`)
 
@@ -170,6 +179,7 @@ steps 1–13). Each row is **Feature name · Action performed · Expected outcom
 | No address | Delivery with no saved address | Prompt to add one in the account; backend rejects (400) without `addressId`. |
 | Pickup pay option | Self-pickup | Choose "Pay at counter" or pay now. |
 | Branch + address on order | Place a delivery order | Order records `branchName` and a **snapshotted** `shippingAddress` (not a link). |
+| Order readback | After placing, land on `/orders/:id` | **Fulfilment** card reads back the customer's selections: Method, Outlet (`branchName`), Payment (Online / Pay at counter), and the snapshotted delivery address (delivery orders only) — so a wrong outlet/address is obvious. |
 | Razorpay (real keys) | Online order with real keys | SDK loads, modal opens, `verifyPayment` on success → navigate to `/orders/:id`. |
 | Empty cart | Open checkout with empty cart | "Your cart is empty." |
 
@@ -177,8 +187,9 @@ steps 1–13). Each row is **Feature name · Action performed · Expected outcom
 
 | Feature name | Action performed | Expected outcome |
 |---|---|---|
-| Form shown | Open `/orders/:id` before submitting | "How was your experience?" star form appears. |
-| Submit | Pick 1–5 stars (+ optional comment) → Submit | 201; "Thanks for your feedback" toast; form disappears (`feedbackSubmitted=true`). |
+| Form shown | Open `/orders/:id` before submitting | Big **"How did we do?"** takeover dialog auto-opens with 1–5 rating cards (Poor→Excellent). |
+| Non-dismissible | Press Esc / click the backdrop / look for a close ✕ | Dialog stays open — no close button, Esc and backdrop are blocked; submitting a rating is the only way out. |
+| Submit | Pick a 1–5 card (+ optional comment) → **Submit rating** | 201; "Thanks for your feedback" toast; dialog closes (`feedbackSubmitted=true`). |
 | Submit-once | Submit feedback again for the same order | **409** "already submitted". |
 | Validation | Submit rating 0 or 6 | **400** (rating must be 1–5). |
 | Admin view | `/admin/feedback` | Read-only grid: Order / Rating (★) / Comment / Submitted; no bulk-upload. |
@@ -193,3 +204,19 @@ steps 1–13). Each row is **Feature name · Action performed · Expected outcom
 | Admin dark theme | Open any admin dialog / sheet / dropdown | Renders in dark theme (portal content included), matching the admin shell. |
 | ag-grid scope | Inspect public vs admin tables | Admin tables use `AdminDataGrid` (ag-grid); public pages use shadcn cards — never ag-grid. |
 | Security | Public GET of products/recommendations/branches unauthenticated; any `/api/v1/admin/**` without ADMIN | Public reads 200; admin without role → 401/403. |
+
+## 15. Events (sellable: `itemType="EVENT"`)
+
+| Feature name | Action performed | Expected outcome |
+|---|---|---|
+| Public grid | Visit `/events` | Grid of active events, soonest first; date + venue + price; "Sold out" badge when full; search + category chips. |
+| Admin create | `/admin/events` → **New event** → name, price, startsAt, capacity → Save | Created (201); appears in grid; audit `EVENT_CREATED`. Blank workflow binds to the **`events`** workflow. |
+| Detail / sign-up (free) | Open `/events/:slug` for a ₹0 event | Poster (brand hero band, date block, how-it-works) + **"Reserve your seat"**; pick guests (1–4, capped by seats) → **Sign up** adds EVENT line(s) → `/checkout`. |
+| Free order completes | Place the ₹0 event order | Skips payment, marked `PAID`, advances to **CONFIRMED** (onPaidEntry); CONFIRMED emails fire (Mailpit). |
+| Tiered event | Event with tiers (Early bird / GA / VIP) | Right panel shows **tier cards + per-tier qty + subtotal**; "Get tickets" → cart → `/checkout` (Razorpay / ₹0). Mixed tiers = one order, multiple lines. |
+| Capacity / sold-out | Order more seats than remain (pool or a tier) | **409** "Only N seat(s) left…"; nothing reserved. Public card + detail flip to "Sold out". |
+| Sales close | Open an event past `salesCloseAt` (defaults to `startsAt`) | `onSale=false`; sign-up button reads "Sign-up closed", disabled; `availableAt` blocks placement. |
+| Cancel + refund | Cancel a CONFIRMED event order | Advances to **CANCELLED**; FULL refund per the stage policy; seats released (available returns). |
+| Admin load column | `/admin/events` grid | **Load** column shows `reserved/capacity left` (or tier count / Unlimited); Date + Venue columns. |
+| Bulk upload | **Bulk upload** CSV (`name,price,category,startsAt,endsAt,capacity,venueBranchSlug,workflowCode`) | `BulkUploadResult`; dup slug/name skipped; bad `startsAt`/branch rows reported. |
+| Nav + security | Header "Events" link; `GET /api/v1/events`; `/api/v1/admin/events` without ADMIN | Public reads 200; admin without role → 401/403. |

@@ -1,10 +1,13 @@
 package com.webappfoundation.service;
 
 import com.webappfoundation.catalog.CatalogService;
+import com.webappfoundation.connector.ActionConnector;
 import com.webappfoundation.connector.CheckoutContext;
 import com.webappfoundation.connector.ConnectorCategory;
 import com.webappfoundation.connector.ConnectorRegistry;
+import com.webappfoundation.connector.ConnectorResult;
 import com.webappfoundation.connector.OrderItemSnapshot;
+import com.webappfoundation.connector.OrderStageContext;
 import com.webappfoundation.connector.QuoteConnector;
 import com.webappfoundation.connector.QuoteOption;
 import com.webappfoundation.dto.BulkUploadResult;
@@ -16,28 +19,35 @@ import com.webappfoundation.dto.PaymentOrderResponse;
 import com.webappfoundation.dto.PlaceOrderRequest;
 import com.webappfoundation.dto.QuoteRequest;
 import com.webappfoundation.dto.QuoteResponse;
+import com.webappfoundation.event.OrderBoardChangedEvent;
 import com.webappfoundation.event.PaymentCapturedEvent;
 import com.webappfoundation.exception.ResourceNotFoundException;
 import com.webappfoundation.inventory.InventoryService;
 import com.webappfoundation.model.Address;
+import com.webappfoundation.model.BlockReason;
 import com.webappfoundation.model.Branch;
 import com.webappfoundation.model.FulfillmentType;
 import com.webappfoundation.model.Order;
 import com.webappfoundation.model.OrderAdjustment;
 import com.webappfoundation.model.OrderItem;
+import com.webappfoundation.model.OrderStageEvent;
 import com.webappfoundation.model.PaymentMode;
 import com.webappfoundation.model.PaymentState;
 import com.webappfoundation.model.RefundPolicy;
 import com.webappfoundation.model.TriggerType;
+import com.webappfoundation.model.User;
 import com.webappfoundation.model.UserAddress;
 import com.webappfoundation.model.WorkflowStage;
 import com.webappfoundation.repository.BranchRepository;
 import com.webappfoundation.repository.OrderFeedbackRepository;
 import com.webappfoundation.repository.OrderRepository;
+import com.webappfoundation.repository.OrderStageEventRepository;
+import com.webappfoundation.repository.UserRepository;
 import com.webappfoundation.workflow.WorkflowEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -74,36 +84,61 @@ public class OrderService {
     private final CatalogService catalogService;
     private final InventoryService inventoryService;
     private final WorkflowService workflowService;
+    private final SprintService sprintService;
     private final WorkflowEngine workflowEngine;
     private final ConnectorRegistry connectorRegistry;
     private final PaymentService paymentService;
     private final BranchRepository branchRepository;
     private final AddressService addressService;
     private final OrderFeedbackRepository feedbackRepository;
+    private final OrderStageEventRepository stageEventRepository;
+    private final UserRepository userRepository;
+    private final EmailService emailService;
     private final AuditService auditService;
     private final SpreadsheetParser spreadsheetParser;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${inventory.reservation-ttl-minutes:15}")
     private int reservationTtlMinutes;
 
+    @Value("${app.base-url:http://localhost:8080}")
+    private String appBaseUrl;
+
     public OrderService(OrderRepository orderRepository, CatalogService catalogService,
                         InventoryService inventoryService, WorkflowService workflowService,
-                        WorkflowEngine workflowEngine, ConnectorRegistry connectorRegistry,
+                        SprintService sprintService, WorkflowEngine workflowEngine,
+                        ConnectorRegistry connectorRegistry,
                         PaymentService paymentService, BranchRepository branchRepository,
                         AddressService addressService, OrderFeedbackRepository feedbackRepository,
-                        AuditService auditService, SpreadsheetParser spreadsheetParser) {
+                        OrderStageEventRepository stageEventRepository, UserRepository userRepository,
+                        EmailService emailService,
+                        AuditService auditService, SpreadsheetParser spreadsheetParser,
+                        ApplicationEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
         this.catalogService = catalogService;
         this.inventoryService = inventoryService;
         this.workflowService = workflowService;
+        this.sprintService = sprintService;
         this.workflowEngine = workflowEngine;
         this.connectorRegistry = connectorRegistry;
         this.paymentService = paymentService;
         this.branchRepository = branchRepository;
         this.addressService = addressService;
         this.feedbackRepository = feedbackRepository;
+        this.stageEventRepository = stageEventRepository;
+        this.userRepository = userRepository;
+        this.emailService = emailService;
         this.auditService = auditService;
         this.spreadsheetParser = spreadsheetParser;
+        this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * Nudge the live board (SSE) after a board-affecting mutation that is NOT a stage transition — stage moves
+     * already publish {@code OrderStageEnteredEvent} via the engine. {@code OrderBoardStream} fans both to viewers.
+     */
+    private void notifyBoard(Order order) {
+        eventPublisher.publishEvent(new OrderBoardChangedEvent(this, order.getWorkflowCode()));
     }
 
     // ── Place ──
@@ -149,6 +184,8 @@ public class OrderService {
                 .paymentMode(paymentMode)
                 .workflowCode(workflowCode)
                 .currentStageCode(initial.getCode())
+                .stageEnteredAt(now)
+                .sprintId(sprintService.activeSprintId(workflowCode)) // join the workflow's active sprint (null if none)
                 .paymentState(PaymentState.AWAITING_PAYMENT)
                 .subtotal(cart.subtotal)
                 .total(total)
@@ -163,11 +200,16 @@ public class OrderService {
         order.setOrderNumber(buildOrderNumber(order.getId(), now));
         order.setReferenceId("order_" + order.getId());
         order = orderRepository.save(order);
+        // seed the stage-history timeline with the initial stage (no connectors fire for this entry)
+        stageEventRepository.save(OrderStageEvent.builder()
+                .orderId(order.getId()).stageCode(initial.getCode()).enteredAt(now).trigger(TriggerType.SYSTEM)
+                .build());
 
         PaymentOrderResponse payment = settlePlacement(order, paymentMode, fulfillment, total, workflowCode);
 
         auditService.record(AuditActions.ORDER_PLACED, AuditActions.SUCCESS, "ORDER", String.valueOf(order.getId()),
                 "total=" + total + " workflow=" + workflowCode + " fulfillment=" + fulfillment + " mode=" + paymentMode);
+        notifyBoard(order); // new card on the board (online placement fires no stage move)
         return toDto(order, payment);
     }
 
@@ -244,10 +286,176 @@ public class OrderService {
     public OrderDto advanceStage(Long id, String stageCode) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
+        // Payment guard: an unpaid order may not enter a terminal non-cancelled (fulfilled) stage — collect
+        // payment first. Mirrors the board's "record the payment" prompt. Cancellation stays allowed.
+        WorkflowStage target = workflowService.stage(order.getWorkflowCode(), stageCode);
+        if (target.isTerminal() && !WorkflowService.CANCELLED_CODE.equals(stageCode)
+                && order.getPaymentState() == PaymentState.AWAITING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Collect payment before completing this order");
+        }
         workflowEngine.advance(order, stageCode, TriggerType.ADMIN);
         auditService.record(AuditActions.ORDER_STAGE_ADVANCED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
                 "stage=" + stageCode);
         return toDto(order, null);
+    }
+
+    // ── Board mutations (optimistic-lock guarded by Order.@Version; stale write → 409) ──
+
+    /** Block an order: keep its stage, freeze the time-in-stage timer. A terminal order cannot be blocked. */
+    @Transactional
+    public OrderDto block(Long id, BlockReason reason, String note) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
+        WorkflowStage stage = workflowService.stage(order.getWorkflowCode(), order.getCurrentStageCode());
+        if (stage.isTerminal()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A completed/cancelled order cannot be blocked");
+        }
+        if (order.isBlocked()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Order is already blocked");
+        }
+        order.setBlocked(true);
+        order.setBlockReason(reason);
+        order.setBlockNote(note);
+        order.setBlockedAt(Instant.now());
+        order.setUpdatedAt(Instant.now());
+        orderRepository.save(order);
+        auditService.record(AuditActions.ORDER_BLOCKED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
+                "reason=" + reason);
+        notifyBoard(order);
+        return toDto(order, null);
+    }
+
+    /** Resume a blocked order: shift stageEnteredAt forward by the blocked duration so the timer resumes. */
+    @Transactional
+    public OrderDto resume(Long id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
+        if (!order.isBlocked()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Order is not blocked");
+        }
+        Instant now = Instant.now();
+        if (order.getBlockedAt() != null && order.getStageEnteredAt() != null) {
+            long pausedMs = now.toEpochMilli() - order.getBlockedAt().toEpochMilli();
+            if (pausedMs > 0) {
+                order.setStageEnteredAt(order.getStageEnteredAt().plusMillis(pausedMs));
+            }
+        }
+        order.setBlocked(false);
+        order.setBlockReason(null);
+        order.setBlockNote(null);
+        order.setBlockedAt(null);
+        order.setUpdatedAt(now);
+        orderRepository.save(order);
+        auditService.record(AuditActions.ORDER_RESUMED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
+                "stage=" + order.getCurrentStageCode());
+        notifyBoard(order);
+        return toDto(order, null);
+    }
+
+    /** Assign (or, with a null userId, unassign) the order to a staff user; snapshots the name onto the card. */
+    @Transactional
+    public OrderDto assign(Long id, Integer userId) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
+        if (userId == null) {
+            order.setAssignedUserId(null);
+            order.setAssignedStaffName(null);
+        } else {
+            User staff = userRepository.findById(userId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown user"));
+            order.setAssignedUserId(staff.getId());
+            order.setAssignedStaffName((safe(staff.getFirstName()) + " " + safe(staff.getLastName())).trim());
+        }
+        order.setUpdatedAt(Instant.now());
+        orderRepository.save(order);
+        auditService.record(AuditActions.ORDER_ASSIGNED, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
+                "assignee=" + (userId == null ? "none" : userId));
+        notifyBoard(order);
+        return toDto(order, null);
+    }
+
+    /** Email the order's owner a link to complete payment for an unpaid order. */
+    @Transactional
+    public OrderDto sendPaymentLink(Long id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
+        if (order.getPaymentState() != PaymentState.AWAITING_PAYMENT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This order is not awaiting payment");
+        }
+        String email = userRepository.findById(order.getUserId()).map(User::getEmail).orElse(null);
+        if (email == null || email.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No email on file for this customer");
+        }
+        String link = appBaseUrl + "/orders/" + order.getId();
+        emailService.sendHtml(email, "Complete your payment — " + safe(order.getOrderNumber()),
+                paymentLinkHtml(order, link));
+        auditService.record(AuditActions.ORDER_PAYMENT_LINK_SENT, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
+                "emailed payment link");
+        return toDto(order, null);
+    }
+
+    /**
+     * Standalone (goodwill) refund that does NOT cancel the order — distinct from {@link #cancel}'s
+     * stage-aware refund. Routes through the refund connector and sets {@code REFUND_PENDING}. The order
+     * must be PAID; a null amount refunds the full total.
+     */
+    @Transactional
+    public OrderDto refund(Long id, BigDecimal amount, String reason) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
+        if (order.getPaymentState() != PaymentState.PAID) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a paid order can be refunded");
+        }
+        BigDecimal refund = amount == null ? order.getTotal() : amount;
+        if (refund.signum() <= 0 || refund.compareTo(order.getTotal()) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Refund amount must be between 0 and the order total");
+        }
+        order.setRefundAmount(refund);
+        order.setCancelReason(reason); // goodwill note; order stays in its current (non-cancelled) stage
+        order.setPaymentState(PaymentState.REFUND_PENDING);
+        order.setUpdatedAt(Instant.now());
+        orderRepository.save(order);
+        ConnectorResult result = issueRefundViaConnector(order, refund);
+        auditService.record(AuditActions.ORDER_REFUNDED, result.isOk() ? AuditActions.SUCCESS : AuditActions.FAILURE,
+                "ORDER", String.valueOf(id), "amount=" + refund + " reason=" + safe(reason)
+                        + (result.getDetail() == null ? "" : " — " + result.getDetail()));
+        notifyBoard(order);
+        return toDto(order, null);
+    }
+
+    /** Find the enabled refund action connector and issue the refund intent for {@code order}. */
+    private ConnectorResult issueRefundViaConnector(Order order, BigDecimal amount) {
+        ActionConnector refundConnector = connectorRegistry.actionConnectors().stream()
+                .filter(c -> c.actions().stream().anyMatch(a -> "refund.issue".equals(a.getCode())))
+                .findFirst().orElse(null);
+        if (refundConnector == null) {
+            log.warn("No refund connector available for order {} — refund marked pending only", order.getId());
+            return ConnectorResult.ok("No refund connector; marked REFUND_PENDING");
+        }
+        OrderStageContext ctx = OrderStageContext.builder()
+                .orderId(order.getId()).referenceId(order.getReferenceId()).userId(order.getUserId())
+                .stageCode(order.getCurrentStageCode())
+                .params(Map.of("refundAmount", amount.toPlainString(), "currency", order.getCurrency()))
+                .build();
+        try {
+            ConnectorResult r = refundConnector.execute("refund.issue", ctx);
+            return r == null ? ConnectorResult.ok(null) : r;
+        } catch (Exception e) {
+            log.warn("Refund connector failed for order {}: {}", order.getId(), e.getMessage());
+            return ConnectorResult.fail(e.getMessage());
+        }
+    }
+
+    private String paymentLinkHtml(Order order, String link) {
+        return "<div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#212121'>"
+                + "<h2 style='color:#1A3A6D'>Complete your payment</h2>"
+                + "<p>Your order <strong>" + safe(order.getOrderNumber()) + "</strong> is awaiting payment of "
+                + order.getCurrency() + " " + order.getTotal().toPlainString() + ".</p>"
+                + "<p><a href='" + link + "' style='background:#1A3A6D;color:#fff;padding:10px 18px;"
+                + "border-radius:6px;text-decoration:none'>Pay now</a></p>"
+                + "<p style='color:#888;font-size:12px'>If the button doesn't work, open: " + link + "</p>"
+                + "</div>";
     }
 
     @Transactional
@@ -259,6 +467,7 @@ public class OrderService {
         orderRepository.save(order);
         auditService.record(AuditActions.ORDER_MARK_PAID, AuditActions.SUCCESS, "ORDER", String.valueOf(id),
                 "settled at counter");
+        notifyBoard(order);
         return toDto(order, null);
     }
 
@@ -364,6 +573,7 @@ public class OrderService {
                     .paymentMode(PaymentMode.ONLINE)
                     .workflowCode(workflowCode)
                     .currentStageCode(workflowService.initialStage(workflowCode).getCode())
+                    .stageEnteredAt(now)
                     .paymentState(PaymentState.PAID)
                     .subtotal(line).total(line).currency(CURRENCY)
                     .items(new ArrayList<>(List.of(OrderItem.builder()
@@ -375,6 +585,9 @@ public class OrderService {
             order.setOrderNumber(buildOrderNumber(order.getId(), now));
             order.setReferenceId("order_" + order.getId());
             orderRepository.save(order);
+            stageEventRepository.save(OrderStageEvent.builder()
+                    .orderId(order.getId()).stageCode(order.getCurrentStageCode()).enteredAt(now)
+                    .trigger(TriggerType.SYSTEM).build());
             result.setCreated(result.getCreated() + 1);
         }
         auditService.record(AuditActions.ORDER_BULK_IMPORT, AuditActions.SUCCESS, "ORDER", null,

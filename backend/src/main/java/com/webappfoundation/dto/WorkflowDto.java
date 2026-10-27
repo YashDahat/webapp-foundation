@@ -21,7 +21,11 @@ public class WorkflowDto {
     /** Serialized/deserialized as "default" (the field is `isDefault`), bound on both sides via @JsonProperty. */
     @JsonProperty("default")
     private boolean isDefault;
+    /** Order-board label for the fulfilling staff role (e.g. "Rider"); nullable. */
+    private String staffRole;
     private List<StageDto> stages;
+    /** Optional in-flight order migration on save; required when removing a stage code live orders occupy (§6). */
+    private WorkflowStageMappingRequest stageMapping;
 
     @Data
     @Builder
@@ -38,6 +42,8 @@ public class WorkflowDto {
         private boolean cancellable;
         private RefundPolicy refundPolicy;
         private Integer refundPercent;
+        /** Order-board SLA target in minutes ("stuck" threshold); nullable. */
+        private Integer targetMinutes;
         private List<BindingDto> bindings;
     }
 
