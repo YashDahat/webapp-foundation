@@ -204,3 +204,19 @@ steps 1–13). Each row is **Feature name · Action performed · Expected outcom
 | Admin dark theme | Open any admin dialog / sheet / dropdown | Renders in dark theme (portal content included), matching the admin shell. |
 | ag-grid scope | Inspect public vs admin tables | Admin tables use `AdminDataGrid` (ag-grid); public pages use shadcn cards — never ag-grid. |
 | Security | Public GET of products/recommendations/branches unauthenticated; any `/api/v1/admin/**` without ADMIN | Public reads 200; admin without role → 401/403. |
+
+## 15. Events (sellable: `itemType="EVENT"`)
+
+| Feature name | Action performed | Expected outcome |
+|---|---|---|
+| Public grid | Visit `/events` | Grid of active events, soonest first; date + venue + price; "Sold out" badge when full; search + category chips. |
+| Admin create | `/admin/events` → **New event** → name, price, startsAt, capacity → Save | Created (201); appears in grid; audit `EVENT_CREATED`. Blank workflow binds to the **`events`** workflow. |
+| Detail / sign-up (free) | Open `/events/:slug` for a ₹0 event | Poster (brand hero band, date block, how-it-works) + **"Reserve your seat"**; pick guests (1–4, capped by seats) → **Sign up** adds EVENT line(s) → `/checkout`. |
+| Free order completes | Place the ₹0 event order | Skips payment, marked `PAID`, advances to **CONFIRMED** (onPaidEntry); CONFIRMED emails fire (Mailpit). |
+| Tiered event | Event with tiers (Early bird / GA / VIP) | Right panel shows **tier cards + per-tier qty + subtotal**; "Get tickets" → cart → `/checkout` (Razorpay / ₹0). Mixed tiers = one order, multiple lines. |
+| Capacity / sold-out | Order more seats than remain (pool or a tier) | **409** "Only N seat(s) left…"; nothing reserved. Public card + detail flip to "Sold out". |
+| Sales close | Open an event past `salesCloseAt` (defaults to `startsAt`) | `onSale=false`; sign-up button reads "Sign-up closed", disabled; `availableAt` blocks placement. |
+| Cancel + refund | Cancel a CONFIRMED event order | Advances to **CANCELLED**; FULL refund per the stage policy; seats released (available returns). |
+| Admin load column | `/admin/events` grid | **Load** column shows `reserved/capacity left` (or tier count / Unlimited); Date + Venue columns. |
+| Bulk upload | **Bulk upload** CSV (`name,price,category,startsAt,endsAt,capacity,venueBranchSlug,workflowCode`) | `BulkUploadResult`; dup slug/name skipped; bad `startsAt`/branch rows reported. |
+| Nav + security | Header "Events" link; `GET /api/v1/events`; `/api/v1/admin/events` without ADMIN | Public reads 200; admin without role → 401/403. |

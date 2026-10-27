@@ -30,6 +30,12 @@ public final class AuditActions {
     public static final String PRODUCT_DELETED = "PRODUCT_DELETED";
     public static final String PRODUCT_BULK_IMPORT = "PRODUCT_BULK_IMPORT";
 
+    // Events
+    public static final String EVENT_CREATED = "EVENT_CREATED";
+    public static final String EVENT_UPDATED = "EVENT_UPDATED";
+    public static final String EVENT_DELETED = "EVENT_DELETED";
+    public static final String EVENT_BULK_IMPORT = "EVENT_BULK_IMPORT";
+
     // Recommendations
     public static final String RECOMMENDATION_CREATED = "RECOMMENDATION_CREATED";
     public static final String RECOMMENDATION_UPDATED = "RECOMMENDATION_UPDATED";

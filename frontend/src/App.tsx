@@ -15,6 +15,8 @@ import CheckoutPage from '@/pages/CheckoutPage'
 import GalleryPage from '@/pages/GalleryPage'
 import ProductsPage from '@/pages/ProductsPage'
 import ProductDetailPage from '@/pages/ProductDetailPage'
+import EventsPage from '@/pages/EventsPage'
+import EventDetailPage from '@/pages/EventDetailPage'
 import OrdersPage from '@/pages/OrdersPage'
 import OrderDetailPage from '@/pages/OrderDetailPage'
 import BranchesPage from '@/pages/BranchesPage'
@@ -26,6 +28,7 @@ import AdminMediaPage from '@/pages/admin/AdminMediaPage'
 import AdminSupportPage from '@/pages/admin/AdminSupportPage'
 import AdminUsersPage from '@/pages/admin/AdminUsersPage'
 import AdminProductsPage from '@/pages/admin/AdminProductsPage'
+import AdminEventsPage from '@/pages/admin/AdminEventsPage'
 import AdminRecommendationsPage from '@/pages/admin/AdminRecommendationsPage'
 import OrderBoardPage from '@/pages/admin/OrderBoardPage'
 import AdminOrdersArchivePage from '@/pages/admin/AdminOrdersArchivePage'
@@ -74,6 +77,8 @@ export default function App() {
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/products/:slug" element={<ProductDetailPage />} />
+                <Route path="/events" element={<EventsPage />} />
+                <Route path="/events/:slug" element={<EventDetailPage />} />
                 <Route path="/branches" element={<BranchesPage />} />
                 <Route path="/gallery" element={<GalleryPage />} />
                 <Route path="/support" element={<RequireAuth><SupportPage /></RequireAuth>} />
@@ -100,6 +105,7 @@ export default function App() {
                 <Route path="support" element={<RequireAdmin><AdminSupportPage /></RequireAdmin>} />
                 <Route path="users" element={<RequireAdmin><AdminUsersPage /></RequireAdmin>} />
                 <Route path="products" element={<RequireAdmin><AdminProductsPage /></RequireAdmin>} />
+                <Route path="events" element={<RequireAdmin><AdminEventsPage /></RequireAdmin>} />
                 <Route path="recommendations" element={<RequireAdmin><AdminRecommendationsPage /></RequireAdmin>} />
                 <Route path="workflow" element={<RequireAdmin><AdminWorkflowPage /></RequireAdmin>} />
                 <Route path="connectors" element={<RequireAdmin><AdminConnectorsPage /></RequireAdmin>} />

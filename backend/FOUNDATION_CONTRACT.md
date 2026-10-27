@@ -354,10 +354,49 @@ Endpoints — public: `GET /api/v1/products(?category=&q=&branchId=)`, `/product
 `GET /api/v1/recommendations?itemType=&itemId=&type=&branchId=` (→ `CatalogItemDto[]`). Admin:
 `GET/POST/PUT/DELETE /api/v1/admin/products` + `/bulk-upload`; `/api/v1/admin/recommendations` CRUD + `/bulk-upload`.
 
+## Events
+
+A dated, finite-capacity sellable (`itemType="EVENT"`) — a `Product` with a date + seats. Registration/
+ticketing runs on the normal order spine: `EventCatalogResolver` maps it to `CatalogItemDto` and
+`EventInventoryProvider` tracks seats via `InventoryService` (no new engine). Capacity is a shared pool
+(`capacity` null = unlimited) or per `EventTier` (GA/VIP/Early-bird); sales stop at `salesCloseAt`
+(defaults to `startsAt`). A free (₹0) event signs up directly through the ₹0 order path; paid/tiered events
+go through cart → checkout. Bound to the seeded **`events`** workflow (`REGISTERED → CONFIRMED(onPaidEntry)
+→ ATTENDED` + `CANCELLED`).
+
+```java
+class Event { Long id; String name; String slug; String description; BigDecimal price;
+  Instant startsAt; Instant endsAt; Instant salesCloseAt; Long venueBranchId;
+  Integer capacity; Integer reserved; List<EventTier> tiers;                 // capacity null = unlimited; tiered = seats per tier
+  String imageUrl; List<String> images; List<String> features; String category;
+  boolean active; String workflowCode; Instant createdAt; Instant updatedAt; }  // workflowCode default "events"
+class EventTier { Long id; String label; String sku; BigDecimal price; Integer stock; Integer reserved; }  // price null → inherit event price
+class EventDto  { /* detail/admin shape + computed available, seatsLeft, onSale, soldOut, venueName; tiers each with computed available */ }
+class EventTierDto { Long id; String label; String sku; BigDecimal price; Integer stock; Integer reserved; Integer available; }
+
+// EVENT itemType key on CatalogConstants.EVENT. ONE resolver + ONE inventory provider, zero engine edits.
+@Component class EventCatalogResolver implements CatalogItemResolver { }   // itemType "EVENT"; detailPath "/events/<slug>"; cartable = tier-less, on-sale, seats left; schedule/soldOut ride CatalogItemDto.attributes
+@Component class EventInventoryProvider implements InventoryProvider { }   // seats-as-stock; variantKey = tier id; atomic reserve, 409 on shortfall; branchId ignored (seats global to the event)
+
+class EventService {
+  List<EventDto> listActive(String category, String q, Long branchId);     // active, soonest first; branchId → that venue (+ unscoped)
+  EventDto getById(Long id); EventDto getBySlug(String slug);              // ResourceNotFoundException on miss
+  EventDto create(UpsertEventRequest); EventDto update(Long, UpsertEventRequest); void delete(Long);
+  BulkUploadResult bulkImport(MultipartFile);   // columns: name,price,category,startsAt,endsAt,capacity,venueBranchSlug,workflowCode
+}
+class UpsertEventRequest { String name; String slug; String description; BigDecimal price; String category;
+  Boolean active; String workflowCode; Instant startsAt; Instant endsAt; Instant salesCloseAt; Long venueBranchId;
+  Integer capacity; String imageUrl; List<String> images; List<String> features; List<TierInput> tiers;
+  record TierInput { Long id; String label; String sku; BigDecimal price; Integer stock; } }
+```
+Endpoints — public: `GET /api/v1/events(?category=&q=&branchId=)`, `/events/{id}`, `/events/slug/{slug}`.
+Admin: `GET/POST/PUT/DELETE /api/v1/admin/events` + `/bulk-upload`.
+
 ## Inventory
 
 Overselling is prevented by a per-type SPI; unlimited items are a no-op. Reserve/commit/release **only** via
-`InventoryService` — never decrement stock by hand. `ProductInventoryProvider` ships (`"PRODUCT"`).
+`InventoryService` — never decrement stock by hand. `ProductInventoryProvider` ships (`"PRODUCT"`),
+`EventInventoryProvider` (`"EVENT"`).
 
 ```java
 interface InventoryProvider {           // ONE @Component per itemType

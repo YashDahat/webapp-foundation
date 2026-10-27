@@ -20,10 +20,12 @@ them and, where noted, add your business content on top.
 | `/checkout` | `pages/CheckoutPage.tsx` | `RequireAuth` | Working final-step checkout (see Checkout section) — usable **as-is**. |
 | `/gallery` | `pages/GalleryPage.tsx` | public | Public gallery view over the media library. |
 | `/products` · `/products/:slug` | `pages/ProductsPage.tsx` · `ProductDetailPage.tsx` | public | Default catalog grid + detail (variants, special features, Similar/Frequently-bought widgets, product reviews). |
+| `/events` · `/events/:slug` | `pages/EventsPage.tsx` · `EventDetailPage.tsx` | public | Events grid + poster/sign-up detail (guest count or ticket tiers → cart → checkout). See "Events". |
 | `/branches` | `pages/BranchesPage.tsx` | public | Outlet picker (also the header branch picker). |
 | `/orders` · `/orders/:id` | `pages/OrdersPage.tsx` · `OrderDetailPage.tsx` | `RequireAuth` | Order history + detail (cancel w/ refund preview, feedback form). |
 | `/admin/media` | `pages/admin/AdminMediaPage.tsx` | `RequireAdmin` | Media library admin. |
 | `/admin/products` · `/admin/recommendations` | — | `RequireAdmin` | Catalog + recommendation admin (grids + bulk upload). |
+| `/admin/events` | `pages/admin/AdminEventsPage.tsx` | `RequireAdmin` | Events admin (grid + schedule/venue/capacity/tiers + bulk upload). |
 | `/admin/orders` | `pages/admin/OrderBoardPage.tsx` | board shell + `RequireAdmin` | **Order board** — admin kanban over the order spine (replaces the old grid). STAFF-accessible. See "Order board". |
 | `/admin/order-archive` | `pages/admin/AdminOrdersArchivePage.tsx` | `RequireAdmin` | **All orders** — flat cross-sprint / cross-workflow record (AdminDataGrid). ADMIN-only; reached via the board's "All orders" button (not the left nav), with "Back to board" to return. See "Order board". |
 | `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | The workflow builder (React Flow diagram) + connector toggles. |
@@ -421,6 +423,26 @@ import RecommendationWidget from '@/components/recommendations/RecommendationWid
 ```
 Cart add (composite id + metadata so lines merge across grid/detail/widget):
 `addItem({ id: \`${itemType}:${itemId}\`, name, unitPrice: price, imageUrl, variantKey, metadata: { itemType, itemId } })`.
+
+## Events — `@/types/event`, `@/services/eventService`, `@/hooks/eventHooks`
+
+The `Event` sellable (`itemType="EVENT"`) ships PREBUILT — a dated, finite-capacity item. Do NOT rebuild the
+service/hooks/types. The detail page is an editorial split (brand-colour poster + "Reserve your seat" panel):
+a tier-less event picks a guest count, a tiered event picks per-tier quantities; "Sign up" / "Get tickets"
+adds EVENT lines to the cart and continues to `/checkout` (the ₹0 path confirms free sign-ups directly).
+
+```ts
+import { eventService } from '@/services/eventService';
+import { useEvents, useEvent, useEventBySlug, useAdminEvents,
+         useCreateEvent, useUpdateEvent, useDeleteEvent } from '@/hooks/eventHooks';
+import type { EventDto, EventTierDto, UpsertEventRequest, EventFilter } from '@/types/event';
+// EventDto: { id; name; slug; price; startsAt; endsAt?; salesCloseAt?; venueBranchId?; venueName?;
+//   capacity?; reserved?; available?; seatsLeft?; onSale; soldOut; tiers: EventTierDto[]; imageUrl?; images?;
+//   features?; category?; active; workflowCode? }  — seats-as-stock; tiered = pick a tier on the detail page.
+// useEvents(filter?: { category?; q?; branchId? }) — active events, soonest first.
+```
+Cart add (same composite-id contract as any sellable; a tier is the `variantKey`):
+`addItem({ id: \`EVENT:${event.id}\`, name, unitPrice, imageUrl, variantKey: String(tierId), metadata: { itemType: 'EVENT', itemId: event.id } }, qty)`.
 
 ## Orders & checkout — `@/services/orderService`, `@/hooks/orderHooks`, `@/types/order`
 

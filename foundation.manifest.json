@@ -340,6 +340,32 @@
       "config": { "env": [], "compose": [] }
     },
     {
+      "id": "events",
+      "core": false,
+      "requires": ["catalog", "inventory", "orders"],
+      "backend": {
+        "controllers": ["EventController.java", "admin/AdminEventController.java"],
+        "packages": [],
+        "fenced": [
+          "Event", "EventTier", "EventDto", "EventTierDto", "UpsertEventRequest",
+          "EventRepository", "EventTierRepository", "EventService",
+          "EventCatalogResolver", "EventInventoryProvider",
+          "EventController", "AdminEventController"
+        ]
+      },
+      "frontend": {
+        "modules": ["/types/event", "/services/eventservice", "/hooks/eventhooks"],
+        "guards": [],
+        "fenced": ["eventService"],
+        "pages": [
+          { "key": "EVENTS", "gate": "PUBLIC", "nav": true },
+          { "key": "EVENT_DETAIL", "gate": "PUBLIC", "nav": false },
+          { "key": "ADMIN_EVENTS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": { "env": [], "compose": [] }
+    },
+    {
       "id": "workflow-connectors",
       "core": false,
       "requires": ["email"],

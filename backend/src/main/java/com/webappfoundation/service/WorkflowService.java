@@ -76,11 +76,12 @@ public class WorkflowService {
         if (workflowRepository.count() > 0) {
             return;
         }
-        log.info("Seeding default + food + retail + services workflows");
+        log.info("Seeding default + food + retail + services + events workflows");
         seedDefaultWorkflow();
         seedFoodWorkflow();
         seedRetailWorkflow();
         seedServicesWorkflow();
+        seedEventsWorkflow();
     }
 
     private void seedDefaultWorkflow() {
@@ -168,6 +169,25 @@ public class WorkflowService {
         bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
         bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
         validateInvariants("services");
+    }
+
+    /** Event registration / ticketing: registered → confirmed (on payment) → attended. */
+    private void seedEventsWorkflow() {
+        workflowRepository.save(Workflow.builder().code("events").label("Events").isDefault(false)
+                .staffRole("Host").build());
+        // Free (₹0) sign-ups skip payment and advance straight to CONFIRMED (onPaidEntry). Cancellable with a
+        // full refund up to CONFIRMED; once ATTENDED/past it's terminal. No time targets (date-driven, not SLA).
+        stage("events", "REGISTERED", "Registered", 0, true, false, false, true, RefundPolicy.FULL, null, null);
+        WorkflowStage confirmed = stage("events", "CONFIRMED", "Confirmed", 1, false, true, false, true, RefundPolicy.FULL, null, null);
+        stage("events", "ATTENDED", "Attended", 2, false, false, true, false, RefundPolicy.NONE, null, null);
+        WorkflowStage cancelled = stage("events", CANCELLED_CODE, "Cancelled", 3, false, false, true, false, RefundPolicy.NONE, null, null);
+
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(confirmed, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER, 0);
+        bind(cancelled, EmailConnector.ID, EmailConnector.EMAIL_STORE, 1);
+        bind(cancelled, DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE, 2);
+        validateInvariants("events");
     }
 
     private WorkflowStage stage(String workflowCode, String code, String label, int ordinal, boolean initial,
