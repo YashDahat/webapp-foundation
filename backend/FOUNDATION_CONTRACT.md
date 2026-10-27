@@ -133,6 +133,13 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 Endpoints (already implemented): `POST /api/v1/payments/create-order`, `/verify`, `/webhook`.
 `PaymentGateway` is the provider adapter — call payments through `PaymentService`, never the gateway directly.
 
+**Security (enforced — do not bypass):** `create-order` and `verify` require an authenticated user;
+`/webhook` is public but verifies its own signature and **fails closed** (no secret ⇒ rejected). Set a
+payment's `amount` **server-side** from your entity's authoritative total — never from the client. A
+consumer reacting to `PaymentCapturedEvent` MUST confirm `event.amount` equals its own expected total
+before settling; the fenced order spine refuses to mark an order paid on a mismatch (see
+`OrderService.onPaymentCaptured`, which audits `ORDER_PAYMENT_MISMATCH`).
+
 ## Media library + gallery (image storage)
 
 ONE media library is already implemented and wired — admins upload/manage ALL images at `/admin/media`;

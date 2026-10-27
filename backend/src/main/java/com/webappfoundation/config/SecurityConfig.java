@@ -61,6 +61,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/v1/admin/orders/*/stage").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/orders/*/block", "/api/v1/admin/orders/*/resume").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasAnyAuthority("ADMIN", "SUPER_ADMIN")
+                        // Payments: the gateway webhook is server-to-server (verifies its own signature)
+                        // so it stays public; opening/verifying a payment requires an authenticated user.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
+                        .requestMatchers("/api/v1/payments/**").authenticated()
                         .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session

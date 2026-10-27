@@ -245,6 +245,15 @@ public class OrderService {
         if (order == null || order.getPaymentState() != PaymentState.AWAITING_PAYMENT) {
             return; // not ours, or already settled — idempotent
         }
+        // Amount integrity: settle ONLY if the captured amount equals the order's server-computed
+        // total. The amount is never trusted from the client — this blocks a (cut-price) gateway
+        // order opened against this order's referenceId from marking it paid. Refuse + audit on mismatch.
+        if (event.getAmount() == null || order.getTotal().compareTo(event.getAmount()) != 0) {
+            auditService.record(AuditActions.ORDER_PAYMENT_MISMATCH, AuditActions.FAILURE, "ORDER",
+                    String.valueOf(order.getId()),
+                    "expected=" + order.getTotal() + " captured=" + event.getAmount() + " ref=" + event.getReferenceId());
+            return; // leave AWAITING_PAYMENT; do not advance the workflow
+        }
         order.setPaymentState(PaymentState.PAID);
         order.setUpdatedAt(Instant.now());
         orderRepository.save(order);

@@ -95,6 +95,17 @@ cart and the signature still verifies.
 - **Contract sync:** adding auth / changing the payment surface requires updating
   `backend/FOUNDATION_CONTRACT.md` (`## Payments`) and `foundation.manifest.json` in the same commit.
 
+**Status:** ◐ Implemented on `feat/security-hardening`. `SecurityConfig` now requires auth on
+`/api/v1/payments/**` (webhook stays public). The authoritative guard is in the fenced order spine:
+`OrderService.onPaymentCaptured` refuses to settle unless the captured amount equals the order's
+server-computed `total`, auditing `ORDER_PAYMENT_MISMATCH` on mismatch — so a cut-price gateway order
+opened against an order's `referenceId` can never mark it paid. The legit path (`placeOrder`) already
+derives the amount server-side; `PaymentService` stays business-agnostic (no order dependency). The
+`## Payments` contract card documents the enforced rules + the consumer obligation. Compile-verified;
+runtime/test (T3) verification pending. *Follow-up:* consider retiring the standalone public
+`create-order` endpoint (the foundation flow uses `placeOrder`), tracked separately to avoid a
+fenced-endpoint removal in this pass.
+
 **Status:** ☐
 
 ---
