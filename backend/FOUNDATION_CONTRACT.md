@@ -15,7 +15,7 @@ resolution is automatic. Match every method signature and field exactly.
 class User {
   Integer id; String firstName; String lastName; String email; String phone; String password; Role role;
   boolean emailVerified;      // set true after the signup OTP is confirmed; login is blocked until then
-  boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts are server-internal)
+  boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts + tokenVersion are server-internal)
 }
 enum Role { SUPER_ADMIN, ADMIN, STAFF, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
 // STAFF = operational role below ADMIN. SecurityConfig grants it a NARROW /admin/** allowlist — only the order board:
@@ -67,7 +67,13 @@ Auth endpoints (already implemented — do not rebuild). `LoginResponse` is retu
 `/register`: `LoginResponse { String token; boolean twoFactorRequired; boolean verificationRequired; String challengeId }`.
 `token` set = logged in; `twoFactorRequired` = finish via /verify-2fa; `verificationRequired` = email
 not verified, finish via /verify-signup. A 6-digit OTP is emailed for either challenge.
-- `POST /api/v1/auth/register` · body `RegisterRequest { firstName; lastName; email; phone; password }` → 201; always role USER, created **unverified**, emails an OTP and returns `LoginResponse { verificationRequired:true, challengeId }` (**no token**). 409 on duplicate email/phone; 400 on weak password (`PasswordPolicy`: ≥ 8 chars incl. a letter and a digit).
+
+**Auth hardening (enforced):** repeated failed logins lock the account out (429) via `LoginRateLimiter`;
+challenge / password-reset links are short-lived (`jwt.challenge-expiration-ms`, 15 min) and a reset
+link is **single-use** (it carries the user's `tokenVersion`, which is bumped on reset). Every access
+token embeds `tokenVersion`; a password change or reset bumps it and thereby **revokes all existing
+tokens** (so a password change logs the user out everywhere).
+- `POST /api/v1/auth/register` · body `RegisterRequest { firstName; lastName; email; phone; password }` → 201; always role USER, created **unverified**, emails an OTP and returns `LoginResponse { verificationRequired:true, challengeId }` (**no token**). 409 on duplicate email/phone; 400 on weak password (`PasswordPolicy`: ≥ 10 chars incl. a letter and a digit, and not a common password).
 - `POST /api/v1/auth/verify-signup` · body `VerifyTwoFactorRequest { challengeId; code }` → verifies OTP, marks account verified, returns `AuthResponse { token }`.
 - `POST /api/v1/auth/login` · body `AuthRequest { username; password }` — **username = email OR phone**. Unverified → `verificationRequired`; else 2FA on → `twoFactorRequired`; else `token`.
 - `POST /api/v1/auth/verify-2fa` · body `VerifyTwoFactorRequest { challengeId; code }` → `AuthResponse { token }`.

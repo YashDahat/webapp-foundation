@@ -170,7 +170,11 @@ credential stuffing, OTP/email bombing, reset-link spraying. (OTP *guesses* are 
 - Single EC2 per site → an in-memory limiter (e.g. bucket4j local) is sufficient; no distributed
   store required.
 
-**Status:** ☐
+**Status:** ☑ Implemented + test-proven on `feat/security-hardening` — `LoginRateLimiter` (in-memory,
+per-account) locks out after `app.security.login.max-attempts` (default 5) failures for
+`app.security.login.lockout-minutes` (15), wired into `AuthController.login`; a bad-credentials login
+now returns 401 (was an unmapped 500). Verified by `AuthHardeningTest.login_locksOutAfterRepeatedFailures`
+(5×401 then 429). WAF/IP-level throttling remains an infra add (step 1).
 
 ---
 
@@ -187,7 +191,10 @@ email forwarding, proxy logs, or `Referer` is replayable for 24h.
 - Make them **single-use**: store a `jti`/nonce, or check a `passwordChangedAt` timestamp so a used
   reset token stops validating.
 
-**Status:** ☐
+**Status:** ☑ Implemented + test-proven on `feat/security-hardening` — challenge/reset tokens now use a
+short dedicated TTL (`jwt.challenge-expiration-ms`, 15 min default) via `JwtUtil.generateChallengeToken`;
+reset links are **single-use** (they carry the user's `tokenVersion`, bumped on reset — see #8).
+Verified by `AuthHardeningTest.resetLink_isSingleUse` (second use → 401).
 
 ---
 
@@ -204,7 +211,11 @@ valid until expiry.
   change, role change, deactivation, and "log out everywhere".
 - Single EC2 → the version can live in the DB / in-memory cache; no Redis needed.
 
-**Status:** ☐
+**Status:** ☑ Implemented + test-proven on `feat/security-hardening` — `User.tokenVersion` is embedded
+in every access token (claim `tv`) and checked in `JwtUtil.validateToken` (so `JwtAuthFilter` enforces
+it); `AuthController` bumps it on password change and reset, revoking all existing tokens. Verified by
+`AuthHardeningTest.accessToken_isRejectedAfterTokenVersionBump`. (Role-change/deactivation bumps are a
+small follow-up.)
 
 ---
 
@@ -217,7 +228,9 @@ for a payments platform.
 
 **Resolution.** Raise the floor and add a denylist of common passwords (or a breach check).
 
-**Status:** ☐
+**Status:** ☑ Implemented + test-proven on `feat/security-hardening` — `PasswordPolicy` now requires
+≥ 10 chars incl. a letter and a digit, and rejects a built-in common-password denylist. Verified by
+`SecurityHardeningTest.register_rejectsWeakAndCommonPasswords` (T9).
 
 ---
 
@@ -419,10 +432,10 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 | T3 | #3 Payment amount | `POST /api/v1/payments/create-order` unauthenticated and with an `amount` far below the real order total; complete `/verify`. | create-order requires auth (401/403 anon); captured amount is bound server-side; mismatch → settlement refused, order not marked paid. | ✓ auth proven (`SecurityHardeningTest.createOrder_isRejectedForAnonymousCaller`); amount-binding guard logic-verified, order-flow test pending |
 | T4 | #4 Webhook fail-open | Unit-test `RazorpayPaymentGateway.verifyWebhook`: no secret + allowUnsigned=false; no secret + allowUnsigned=true; configured secret + forged signature. | No secret → rejected (fail closed) unless unsigned explicitly allowed (dev); forged signature → rejected. | ✓ `RazorpayWebhookFailClosedTest` (3 cases) |
 | T5 | #5 Default admin | Unit-test `AdminInitializer.run()` with a blank/known-default password and `allow-insecure-default` false vs true. | Blank/default password throws unless the dev escape hatch is set. | ✓ `AdminInitializerSeedGuardTest` (3 cases) |
-| T6 | #6 Rate limiting | Script 100+ rapid `/api/v1/auth/login` attempts with bad passwords for one account and from one IP. | Lockout / backoff after N failures (per account + per IP); WAF rate rule throttles the IP. | ☐ |
-| T7 | #7 Reset-token replay | Request a reset link; decode the JWT `exp`; use the token twice; use it after 20 min. | TTL ≤ 15 min; second use rejected (single-use); expired token rejected (401). | ☐ |
-| T8 | #8 Token revocation | Log in → capture JWT. Change the password (or deactivate the user). Reuse the old JWT. | Old JWT rejected (401) after password change / deactivation / logout-everywhere. | ☐ |
-| T9 | #9 Password policy | Register with `password1`, a 6-char value, and a known-breached common password. | Weak/common passwords rejected (400); minimum length + complexity enforced. | ☐ |
+| T6 | #6 Rate limiting | Repeated `/api/v1/auth/login` with bad passwords for one account. | Lockout after N failures (per account); locked attempt → 429. WAF/IP-level is an infra add. | ✓ `AuthHardeningTest.login_locksOutAfterRepeatedFailures` (5×401 then 429) |
+| T7 | #7 Reset-token replay | Build a reset link, use it twice. | Short TTL (15 min); second use rejected (single-use via tokenVersion). | ✓ `AuthHardeningTest.resetLink_isSingleUse` |
+| T8 | #8 Token revocation | Issue a JWT, bump the user's tokenVersion (password change), reuse the old JWT. | Old JWT rejected (401/403) after the bump. | ✓ `AuthHardeningTest.accessToken_isRejectedAfterTokenVersionBump` |
+| T9 | #9 Password policy | Register with `password1` (short + common). | Weak/common passwords rejected (400); ≥10 chars + letter + digit + denylist. | ✓ `SecurityHardeningTest.register_rejectsWeakAndCommonPasswords` |
 | T10 | #10 Secrets | On the instance: `ls -l .env` (mode), `docker inspect` the container, try reading secrets as a non-root local user. Confirm app reads from SSM/Secrets Manager. | `.env` is `600`/owned by service user (or absent); secrets sourced from Secrets Manager; EBS encrypted at rest. | ☐ |
 | T11 | #11 Schema mgmt | Inspect startup logs for Hibernate DDL; check `flyway_schema_history` exists. | `ddl-auto=validate` in prod; schema applied via versioned Flyway migrations, no auto-mutation. | ☐ |
 | TA | A CORS | From a disallowed origin (browser or `curl -H "Origin: https://evil.example"`) call the API; inspect `Access-Control-Allow-Origin`. | Only the configured origin is echoed; no `*`; disallowed origins get no ACAO header. | ✓ `SecurityHardeningTest.cors_disallowedOrigin_isNotEchoed` + `cors_allowedOrigin_isEchoedAndNeverWildcard` |
@@ -437,30 +450,29 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 > (MockMvc / Testcontainers) so they re-run on every build; T1, TB, TC, T10 are infra checks suited
 > to a deployment smoke test; T6 and the RDS swap (TP3) are best run against a staging environment.
 
-### Automated suite — `SecurityHardeningTest` + `RazorpayWebhookFailClosedTest`
+### Automated suite
 
-The automatable rows live in two test classes under `backend/src/test/java/com/webappfoundation/security/`:
+Six test classes under `backend/src/test/java/com/webappfoundation/`:
 
-- **`SecurityHardeningTest`** — `@SpringBootTest` + `@ActiveProfiles("test")` MockMvc suite. **Enabled
-  and passing:** T3 (payment auth), TA (CORS allow/deny, no wildcard). **Still `@Disabled`** pending
-  their fixes: T7 (#7), T8 (#8), T9 (#9).
-- **`RazorpayWebhookFailClosedTest`** — focused unit test for T4 (#4): no-secret → reject unless
-  unsigned explicitly allowed; configured-secret + forged signature → reject. (Unit, not endpoint,
-  because the `test` profile uses the demo gateway.)
+- **`security/SecurityHardeningTest`** — `@SpringBootTest` + `@ActiveProfiles("test")` MockMvc: T3
+  (payment auth), TA (CORS allow/deny, no wildcard), T9 (weak/common password rejected).
+- **`security/AuthHardeningTest`** — T6 (login lockout → 429), T7 (reset link single-use), T8 (access
+  token revoked after a `tokenVersion` bump).
+- **`security/PaymentAmountIntegrityTest`** — T3 amount binding (a sub-total capture leaves the order
+  `AWAITING_PAYMENT`, audits `ORDER_PAYMENT_MISMATCH`).
+- **`security/RazorpayWebhookFailClosedTest`** — T4 webhook fail-closed (unit; the `test` profile uses
+  the demo gateway).
+- **`util/JwtUtilValidationTest`** — T2 fail-fast signing-key check.
+- **`config/AdminInitializerSeedGuardTest`** — T5 default-admin seed guard.
 
 **Test profile / datastore.** `src/test/resources/application-test.properties` runs the full context
 on **in-memory H2 (PostgreSQL mode)** — no Postgres/Docker — and supplies test-only secrets so the
 fail-fast startup checks pass. `com.h2database:h2` is a test-scope dependency.
 
-**Enable-per-fix workflow.** When finding #N lands, delete the `@Disabled` on its test **in the same
-commit** as the fix (and its contract-card / manifest sync). A re-enabled test that fails means the
-fix is incomplete.
-
-**Verified:** `mvn test -Dtest=SecurityHardeningTest,RazorpayWebhookFailClosedTest` is green — T3, TA,
-T4 pass; T7/T8/T9 skipped (disabled). This project is on Spring Boot **4.1.0** (Spring Framework 7):
-`@AutoConfigureMockMvc` lives at `org.springframework.boot.webmvc.test.autoconfigure` (moved from
-`…test.autoconfigure.web.servlet`); the classic `MockMvcRequestBuilders`/`MockMvcResultMatchers` API
-is unchanged.
+**Verified:** `mvn test` is green — **17 tests, 0 failures, 0 skipped** (no `@Disabled` remain). This
+project is on Spring Boot **4.1.0** (Spring Framework 7): `@AutoConfigureMockMvc` lives at
+`org.springframework.boot.webmvc.test.autoconfigure` (moved from `…test.autoconfigure.web.servlet`);
+the classic `MockMvcRequestBuilders`/`MockMvcResultMatchers` API is unchanged.
 
 > **Note — no prior regression net.** There was no `src/test` tree at all, so no automated test ran
 > before this — itself a hardening gap. (The pom's `spring-boot-starter-webmvc-test` etc. are *valid*

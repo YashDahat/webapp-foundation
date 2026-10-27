@@ -61,6 +61,16 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private int otpAttempts = 0;
 
+    /**
+     * Monotonic credential version embedded in issued JWTs (claim {@code tv}). A request is rejected
+     * when its token's {@code tv} does not match this value, so bumping it on a password change/reset
+     * revokes every previously-issued token (and makes a used reset link single-use). Server-internal.
+     */
+    @Builder.Default
+    @ColumnDefault("0")
+    @Column(nullable = false)
+    private long tokenVersion = 0;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority(role.name()));
