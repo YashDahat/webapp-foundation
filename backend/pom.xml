@@ -95,6 +95,13 @@
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Real Spring Boot test starter (JUnit 5, MockMvc, AssertJ, Mockito, spring-security-test).
+		     Added for the security hardening test suite (src/test/.../security/SecurityHardeningTest). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
 			<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
