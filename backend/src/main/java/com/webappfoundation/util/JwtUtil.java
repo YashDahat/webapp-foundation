@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,20 @@ public class JwtUtil {
 
     @Value("${jwt.expiration-ms}")
     private long expirationMs;
+
+    /**
+     * Fail fast at startup rather than run with a missing or weak signing key. An HS256 key must be
+     * at least 256 bits (32 bytes); a blank/short secret means either JWT_SECRET is unset in prod or
+     * a trivially forgeable key is in use — refuse to boot so forged admin tokens are impossible.
+     */
+    @PostConstruct
+    void validateSigningKey() {
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "jwt.secret (env JWT_SECRET) must be set to at least 32 bytes. Refusing to start "
+                            + "with a missing or weak JWT signing key.");
+        }
+    }
 
     public String generateToken(UserDetails userDetails) {
         // Carry the role as a claim so the frontend can gate UI (backend authz still

@@ -70,7 +70,9 @@ is unset, the app boots with a signing key known to anyone with the foundation, 
 - Source the secret from **SSM Parameter Store / Secrets Manager** (see finding #10), not a
   plaintext `.env` on the instance.
 
-**Status:** ☐
+**Status:** ◐ Implemented on `feat/security-hardening` — demo default removed from base properties
+(moved to the dev profile); `JwtUtil.validateSigningKey()` fails fast if the secret is missing or
+< 32 bytes. Compile-verified; runtime/test verification pending.
 
 ---
 
@@ -112,7 +114,10 @@ anyone can POST a forged `payment.captured` and mark arbitrary orders paid. The 
   prod). Never treat "no secret" as "trusted".
 - Verify the signature over the **raw** request body before parsing.
 
-**Status:** ☐
+**Status:** ◐ Implemented on `feat/security-hardening` — `RazorpayPaymentGateway.verifyWebhook()` now
+returns `allowUnsigned` (default **false**) instead of `true` when no secret is set; the fenced
+`PaymentGateway` javadoc now mandates fail-closed. Dev opts in via `razorpay.webhook.allow-unsigned`.
+Compile-verified; runtime/test (T4) verification pending.
 
 ---
 
@@ -129,7 +134,9 @@ login.
   change on first login).
 - Never log the seeded credentials.
 
-**Status:** ☐
+**Status:** ◐ Implemented on `feat/security-hardening` — `AdminInitializer` throws at startup if the
+admin password is blank or the known default (`changeme123`) unless `admin.allow-insecure-default=true`
+(dev profile only). Compile-verified; runtime verification pending.
 
 ---
 
@@ -248,7 +255,10 @@ is cross-origin and will be blocked until CORS is configured.
 - **Never** use `Access-Control-Allow-Origin: *`, especially with a bearer token in the header.
 - **Contract sync:** CORS env belongs in `foundation.manifest.json` (`config.env`).
 
-**Status:** ☐
+**Status:** ◐ Implemented on `feat/security-hardening` — `SecurityConfig` adds a strict
+`CorsConfigurationSource` from `app.cors.allowed-origins` (comma-split, credentials on, no `*`),
+wired via `http.cors(...)`; `APP_CORS_ALLOWED_ORIGINS` added to the auth `config.env` in the manifest
+and to `.env.example`. Compile-verified; runtime/test (TA) verification pending.
 
 ### B. 🟠 S3 frontend bucket must be private + CloudFront OAC
 
@@ -323,7 +333,9 @@ MinIO/mailpit/relaxed secrets; `prod` has **no defaults and refuses to boot** if
 Razorpay, or CORS origins are unset. This is what prevents constant re-tweaking — misconfiguration is
 caught at startup, not re-patched after an incident. Hardening findings #2, #4, #5 become
 *prod-profile config*, not per-environment code edits.
-**Status:** ☐
+**Status:** ◐ Implemented on `feat/security-hardening` — base `application.properties` activates
+`${SPRING_PROFILES_ACTIVE:dev}`; `application-dev.properties` holds convenience defaults and
+`application-prod.properties` is strict/empty. Compile-verified; runtime verification pending.
 
 **P3. 🟡 Flyway migrations (replaces `ddl-auto=update`).**
 No Flyway/Liquibase on the classpath today; the app mutates its own schema (fragile on RDS). Add
