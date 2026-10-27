@@ -70,9 +70,9 @@ is unset, the app boots with a signing key known to anyone with the foundation, 
 - Source the secret from **SSM Parameter Store / Secrets Manager** (see finding #10), not a
   plaintext `.env` on the instance.
 
-**Status:** ◐ Implemented on `feat/security-hardening` — demo default removed from base properties
-(moved to the dev profile); `JwtUtil.validateSigningKey()` fails fast if the secret is missing or
-< 32 bytes. Compile-verified; runtime/test verification pending.
+**Status:** ☑ Implemented + test-proven on `feat/security-hardening` — demo default removed from base
+properties (moved to the dev profile); `JwtUtil.validateSigningKey()` fails fast if the secret is
+missing or < 32 bytes. Verified by `JwtUtilValidationTest` (T2, 3 cases).
 
 ---
 
@@ -103,7 +103,8 @@ opened against an order's `referenceId` can never mark it paid. The legit path (
 derives the amount server-side; `PaymentService` stays business-agnostic (no order dependency). The
 `## Payments` contract card documents the enforced rules + the consumer obligation. **Test-proven:**
 `SecurityHardeningTest` (T3) confirms anonymous `create-order` is denied (401/403); the amount-binding
-guard (`onPaymentCaptured`) is logic-verified — a dedicated order-flow test is a tracked follow-up.
+guard (`onPaymentCaptured`) is proven by `PaymentAmountIntegrityTest` (a ₹1 capture against a ₹10000
+order leaves it `AWAITING_PAYMENT`, audits `ORDER_PAYMENT_MISMATCH`).
 *Follow-up:* consider retiring the standalone public
 `create-order` endpoint (the foundation flow uses `placeOrder`), tracked separately to avoid a
 fenced-endpoint removal in this pass.
@@ -147,9 +148,10 @@ login.
   change on first login).
 - Never log the seeded credentials.
 
-**Status:** ◐ Implemented on `feat/security-hardening` — `AdminInitializer` throws at startup if the
-admin password is blank or the known default (`changeme123`) unless `admin.allow-insecure-default=true`
-(dev profile only). Compile-verified; runtime verification pending.
+**Status:** ☑ Implemented + test-proven on `feat/security-hardening` — `AdminInitializer` throws at
+startup if the admin password is blank or the known default (`changeme123`) unless
+`admin.allow-insecure-default=true` (dev profile only). Verified by `AdminInitializerSeedGuardTest`
+(T5, 3 cases).
 
 ---
 
@@ -413,10 +415,10 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 | ID | Finding | How to test | Expected after fix (PASS) | Result |
 |----|---------|-------------|----------------------------|--------|
 | T1 | #1 TLS | `curl -I http://<host>/` and hit the API over `http://`. Run SSL Labs / `testssl.sh` against the LB. | HTTP 301→HTTPS; HSTS header present; no plaintext endpoint reachable; TLS 1.2+ only. | ☐ |
-| T2 | #2 JWT default | Boot the app in `prod` profile with `JWT_SECRET` unset. Separately, forge a token with the committed demo key and call `/api/v1/admin/users`. | App refuses to start without `JWT_SECRET`; token signed with the old demo key is rejected (401). | ☐ |
+| T2 | #2 JWT default | Unit-test `JwtUtil.validateSigningKey()` with a blank, short, and 32+ byte secret. | Blank/short secret throws (app refuses to start); 32+ byte secret accepted. | ✓ `JwtUtilValidationTest` (3 cases) |
 | T3 | #3 Payment amount | `POST /api/v1/payments/create-order` unauthenticated and with an `amount` far below the real order total; complete `/verify`. | create-order requires auth (401/403 anon); captured amount is bound server-side; mismatch → settlement refused, order not marked paid. | ✓ auth proven (`SecurityHardeningTest.createOrder_isRejectedForAnonymousCaller`); amount-binding guard logic-verified, order-flow test pending |
 | T4 | #4 Webhook fail-open | Unit-test `RazorpayPaymentGateway.verifyWebhook`: no secret + allowUnsigned=false; no secret + allowUnsigned=true; configured secret + forged signature. | No secret → rejected (fail closed) unless unsigned explicitly allowed (dev); forged signature → rejected. | ✓ `RazorpayWebhookFailClosedTest` (3 cases) |
-| T5 | #5 Default admin | Deploy without overriding `ADMIN_PASSWORD`; attempt login with `changeme123`. | Prod refuses to seed a default password (fail-fast) or forces a reset on first login; default login fails. | ☐ |
+| T5 | #5 Default admin | Unit-test `AdminInitializer.run()` with a blank/known-default password and `allow-insecure-default` false vs true. | Blank/default password throws unless the dev escape hatch is set. | ✓ `AdminInitializerSeedGuardTest` (3 cases) |
 | T6 | #6 Rate limiting | Script 100+ rapid `/api/v1/auth/login` attempts with bad passwords for one account and from one IP. | Lockout / backoff after N failures (per account + per IP); WAF rate rule throttles the IP. | ☐ |
 | T7 | #7 Reset-token replay | Request a reset link; decode the JWT `exp`; use the token twice; use it after 20 min. | TTL ≤ 15 min; second use rejected (single-use); expired token rejected (401). | ☐ |
 | T8 | #8 Token revocation | Log in → capture JWT. Change the password (or deactivate the user). Reuse the old JWT. | Old JWT rejected (401) after password change / deactivation / logout-everywhere. | ☐ |
