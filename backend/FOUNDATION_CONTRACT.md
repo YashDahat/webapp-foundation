@@ -136,11 +136,13 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 }
 ```
 
-Endpoints (already implemented): `POST /api/v1/payments/create-order`, `/verify`, `/webhook`.
+Endpoints (already implemented): `POST /api/v1/payments/verify`, `/webhook`. There is **no public
+create-order endpoint** — open a payment order server-side via `PaymentService.createOrder` (the order
+spine does this in `OrderService.placeOrder`), so the amount is never client-chosen.
 `PaymentGateway` is the provider adapter — call payments through `PaymentService`, never the gateway directly.
 
-**Security (enforced — do not bypass):** `create-order` and `verify` require an authenticated user;
-`/webhook` is public but verifies its own signature and **fails closed** (no secret ⇒ rejected). Set a
+**Security (enforced — do not bypass):** `verify` requires an authenticated user; `/webhook` is public
+but verifies its own signature and **fails closed** (no secret ⇒ rejected). Set a
 payment's `amount` **server-side** from your entity's authoritative total — never from the client. A
 consumer reacting to `PaymentCapturedEvent` MUST confirm `event.amount` equals its own expected total
 before settling; the fenced order spine refuses to mark an order paid on a mismatch (see

@@ -30,16 +30,16 @@ class SecurityHardeningTest {
 
     // ── T3 / finding #3 — payment endpoints require auth ───────────────────────────────────────────
     @Test
-    void createOrder_isRejectedForAnonymousCaller() throws Exception {
+    void paymentVerify_isRejectedForAnonymousCaller() throws Exception {
         String body = """
-                { "amount": 1, "currency": "INR", "referenceId": "order_1" }
+                { "gatewayOrderId": "order_x", "gatewayPaymentId": "pay_x", "signature": "sig" }
                 """;
-        mockMvc.perform(post("/api/v1/payments/create-order")
+        mockMvc.perform(post("/api/v1/payments/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(result -> {
                     int s = result.getResponse().getStatus();
-                    assertThat(s).as("anonymous create-order must be denied").isIn(401, 403);
+                    assertThat(s).as("anonymous payment verify must be denied").isIn(401, 403);
                 });
     }
 

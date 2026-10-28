@@ -3,6 +3,7 @@ package com.webappfoundation.security;
 import com.webappfoundation.model.Role;
 import com.webappfoundation.model.User;
 import com.webappfoundation.repository.UserRepository;
+import com.webappfoundation.service.UserAdminService;
 import com.webappfoundation.util.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,7 @@ class AuthHardeningTest {
     @Autowired private UserRepository userRepository;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtUtil jwtUtil;
+    @Autowired private UserAdminService userAdminService;
 
     private User saveUser(String email, String phone) {
         return userRepository.save(User.builder()
@@ -77,6 +79,19 @@ class AuthHardeningTest {
         mockMvc.perform(post("/api/v1/auth/reset-password")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── #8 follow-up — a role change bumps tokenVersion (revoking existing tokens) ─────────────────
+    @Test
+    void roleChange_bumpsTokenVersion() {
+        User user = saveUser("rolechange@test.com", "+919000000003");
+        long before = user.getTokenVersion();
+
+        userAdminService.changeRole(user.getId(), Role.STAFF);
+
+        User reloaded = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(reloaded.getTokenVersion()).as("role change must bump tokenVersion").isGreaterThan(before);
+        assertThat(reloaded.getRole()).isEqualTo(Role.STAFF);
     }
 
     // ── T6 / finding #6 — repeated login failures lock the account out (429) ───────────────────────

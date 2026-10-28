@@ -102,12 +102,12 @@ server-computed `total`, auditing `ORDER_PAYMENT_MISMATCH` on mismatch — so a 
 opened against an order's `referenceId` can never mark it paid. The legit path (`placeOrder`) already
 derives the amount server-side; `PaymentService` stays business-agnostic (no order dependency). The
 `## Payments` contract card documents the enforced rules + the consumer obligation. **Test-proven:**
-`SecurityHardeningTest` (T3) confirms anonymous `create-order` is denied (401/403); the amount-binding
-guard (`onPaymentCaptured`) is proven by `PaymentAmountIntegrityTest` (a ₹1 capture against a ₹10000
-order leaves it `AWAITING_PAYMENT`, audits `ORDER_PAYMENT_MISMATCH`).
-*Follow-up:* consider retiring the standalone public
-`create-order` endpoint (the foundation flow uses `placeOrder`), tracked separately to avoid a
-fenced-endpoint removal in this pass.
+`SecurityHardeningTest` (T3) confirms anonymous payment endpoints are denied (401/403); the
+amount-binding guard (`onPaymentCaptured`) is proven by `PaymentAmountIntegrityTest` (a ₹1 capture
+against a ₹10000 order leaves it `AWAITING_PAYMENT`, audits `ORDER_PAYMENT_MISMATCH`).
+**Done:** the standalone public `create-order` endpoint has been **retired** — payment orders are
+opened server-side via `PaymentService.createOrder` (`OrderService.placeOrder`), removing the
+client-chosen-amount surface entirely (frontend `createPaymentOrder` removed; contract card updated).
 
 **Status:** ☐
 
@@ -213,9 +213,10 @@ valid until expiry.
 
 **Status:** ☑ Implemented + test-proven on `feat/security-hardening` — `User.tokenVersion` is embedded
 in every access token (claim `tv`) and checked in `JwtUtil.validateToken` (so `JwtAuthFilter` enforces
-it); `AuthController` bumps it on password change and reset, revoking all existing tokens. Verified by
-`AuthHardeningTest.accessToken_isRejectedAfterTokenVersionBump`. (Role-change/deactivation bumps are a
-small follow-up.)
+it); `AuthController` bumps it on password change and reset, and `UserAdminService.changeRole` bumps it
+on a role change (a demotion revokes existing sessions), revoking all existing tokens. Verified by
+`AuthHardeningTest.accessToken_isRejectedAfterTokenVersionBump` + `roleChange_bumpsTokenVersion`.
+(Delete removes the user outright, so no bump is needed; there is no separate "deactivated" state.)
 
 ---
 
@@ -429,7 +430,7 @@ be blocked). `base` = the backend base URL (prod: HTTPS behind the LB).
 |----|---------|-------------|----------------------------|--------|
 | T1 | #1 TLS | `curl -I http://<host>/` and hit the API over `http://`. Run SSL Labs / `testssl.sh` against the LB. | HTTP 301→HTTPS; HSTS header present; no plaintext endpoint reachable; TLS 1.2+ only. | ☐ |
 | T2 | #2 JWT default | Unit-test `JwtUtil.validateSigningKey()` with a blank, short, and 32+ byte secret. | Blank/short secret throws (app refuses to start); 32+ byte secret accepted. | ✓ `JwtUtilValidationTest` (3 cases) |
-| T3 | #3 Payment amount | `POST /api/v1/payments/create-order` unauthenticated and with an `amount` far below the real order total; complete `/verify`. | create-order requires auth (401/403 anon); captured amount is bound server-side; mismatch → settlement refused, order not marked paid. | ✓ auth proven (`SecurityHardeningTest.createOrder_isRejectedForAnonymousCaller`); amount-binding guard logic-verified, order-flow test pending |
+| T3 | #3 Payment amount | Call `/api/v1/payments/verify` anonymously; fire a capture whose amount ≠ the order total. | Payment endpoints require auth (401/403 anon); no public create-order; a mismatched capture leaves the order unpaid. | ✓ auth (`SecurityHardeningTest.paymentVerify_isRejectedForAnonymousCaller`) + amount binding (`PaymentAmountIntegrityTest`) |
 | T4 | #4 Webhook fail-open | Unit-test `RazorpayPaymentGateway.verifyWebhook`: no secret + allowUnsigned=false; no secret + allowUnsigned=true; configured secret + forged signature. | No secret → rejected (fail closed) unless unsigned explicitly allowed (dev); forged signature → rejected. | ✓ `RazorpayWebhookFailClosedTest` (3 cases) |
 | T5 | #5 Default admin | Unit-test `AdminInitializer.run()` with a blank/known-default password and `allow-insecure-default` false vs true. | Blank/default password throws unless the dev escape hatch is set. | ✓ `AdminInitializerSeedGuardTest` (3 cases) |
 | T6 | #6 Rate limiting | Repeated `/api/v1/auth/login` with bad passwords for one account. | Lockout after N failures (per account); locked attempt → 429. WAF/IP-level is an infra add. | ✓ `AuthHardeningTest.login_locksOutAfterRepeatedFailures` (5×401 then 429) |
@@ -469,7 +470,7 @@ Six test classes under `backend/src/test/java/com/webappfoundation/`:
 on **in-memory H2 (PostgreSQL mode)** — no Postgres/Docker — and supplies test-only secrets so the
 fail-fast startup checks pass. `com.h2database:h2` is a test-scope dependency.
 
-**Verified:** `mvn test` is green — **17 tests, 0 failures, 0 skipped** (no `@Disabled` remain). This
+**Verified:** `mvn test` is green — **18 tests, 0 failures, 0 skipped** (no `@Disabled` remain). This
 project is on Spring Boot **4.1.0** (Spring Framework 7): `@AutoConfigureMockMvc` lives at
 `org.springframework.boot.webmvc.test.autoconfigure` (moved from `…test.autoconfigure.web.servlet`);
 the classic `MockMvcRequestBuilders`/`MockMvcResultMatchers` API is unchanged.

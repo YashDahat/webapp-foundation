@@ -55,6 +55,7 @@ public class UserAdminService {
                     "A super admin already exists — only one is allowed. Demote the current one first.");
         }
         user.setRole(role);
+        user.setTokenVersion(user.getTokenVersion() + 1); // revoke existing tokens so a role change takes effect immediately
         return toDto(userRepository.save(user));
     }
 
@@ -98,7 +99,7 @@ public class UserAdminService {
             try {
                 passwordPolicy.validate(password);
             } catch (ResponseStatusException e) {
-                result.addError(rowNum, "weak password (min 8 chars incl. a letter and a digit)");
+                result.addError(rowNum, "weak password (min 10 chars incl. a letter and a digit, not a common password)");
                 continue;
             }
             Role role = Role.USER;
