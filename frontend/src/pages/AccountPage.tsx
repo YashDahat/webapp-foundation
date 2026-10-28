@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import AddressBook from '@/components/AddressBook';
 
-const STRONG = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/; // matches backend PasswordPolicy
+const STRONG = /^(?=.*[A-Za-z])(?=.*\d).{10,}$/; // matches backend PasswordPolicy
 
 /**
  * Account settings: toggle email-OTP two-factor auth and change your password. (The backend exposes
@@ -70,7 +70,7 @@ function ChangePasswordCard({ onChange }: { onChange: (current: string, next: st
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!STRONG.test(next)) { setError('New password must be at least 8 characters and include a letter and a digit.'); return; }
+    if (!STRONG.test(next)) { setError('New password must be at least 10 characters and include a letter and a digit.'); return; }
     if (next !== confirm) { setError('New passwords do not match.'); return; }
     setBusy(true);
     try {

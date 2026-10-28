@@ -20,8 +20,8 @@ const schema = z.object({
   lastName: z.string().min(1, 'Last name is required'),
   email: z.string().email('Enter a valid email'),
   phone: z.string().min(10, 'Enter a valid phone number'),
-  // Backend PasswordPolicy: min 8 chars incl. a letter and a digit.
-  password: z.string().regex(/^(?=.*[A-Za-z])(?=.*\d).{8,}$/, 'At least 8 chars, incl. a letter and a digit'),
+  // Backend PasswordPolicy: min 10 chars incl. a letter and a digit (and not a common password).
+  password: z.string().regex(/^(?=.*[A-Za-z])(?=.*\d).{10,}$/, 'At least 10 chars, incl. a letter and a digit'),
 });
 type Values = z.infer<typeof schema>;
 

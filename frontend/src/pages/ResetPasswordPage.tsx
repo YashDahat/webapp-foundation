@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 
-const STRONG = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/; // matches backend PasswordPolicy
+const STRONG = /^(?=.*[A-Za-z])(?=.*\d).{10,}$/; // matches backend PasswordPolicy
 
 /** Set a new password using the token from the emailed reset link (/reset-password?token=...). */
 export default function ResetPasswordPage() {
@@ -22,7 +22,7 @@ export default function ResetPasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!STRONG.test(password)) { setError('Password must be at least 8 characters and include a letter and a digit.'); return; }
+    if (!STRONG.test(password)) { setError('Password must be at least 10 characters and include a letter and a digit.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
     setBusy(true);
     try {

@@ -86,7 +86,7 @@ tokens** (so a password change logs the user out everywhere).
 // OTP: issues/verifies the emailed 6-digit code (BCrypt-hashed, TTL + attempt-locked) used by both
 // signup verification and 2FA login. Internal to the auth flow. OTP_TTL_MINUTES controls validity.
 class OtpService { void issue(User u); boolean verify(User u, String code); }
-// PasswordPolicy: min 8 chars incl. a letter + a digit; throws 400 on register/change/reset.
+// PasswordPolicy: min 10 chars incl. a letter + a digit, and not a common password; throws 400 on register/change/reset.
 class PasswordPolicy { void validate(String password); }
 ```
 
