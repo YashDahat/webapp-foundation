@@ -22,8 +22,9 @@ public class PaymentGatewayConfig {
     public PaymentGateway razorpayPaymentGateway(
             @Value("${razorpay.key.id:}") String keyId,
             @Value("${razorpay.key.secret:}") String keySecret,
-            @Value("${razorpay.webhook.secret:}") String webhookSecret) {
-        return new RazorpayPaymentGateway(keyId, keySecret, webhookSecret);
+            @Value("${razorpay.webhook.secret:}") String webhookSecret,
+            @Value("${razorpay.webhook.allow-unsigned:false}") boolean allowUnsigned) {
+        return new RazorpayPaymentGateway(keyId, keySecret, webhookSecret, allowUnsigned);
     }
 
     @Bean

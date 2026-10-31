@@ -3,6 +3,7 @@ package com.webappfoundation.exception;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -44,6 +45,13 @@ public class GlobalExceptionHandler {
         }
         String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
         return ResponseEntity.status(status).body(ErrorResponse.of(status, message));
+    }
+
+    /** Bad credentials / failed authentication → 401 with a generic message (no account-existence leak). */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

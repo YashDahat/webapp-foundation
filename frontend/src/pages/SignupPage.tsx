@@ -13,6 +13,7 @@ import {
   Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter,
 } from '@/components/ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { STRONG_PASSWORD, isCommonPassword } from '@/lib/passwordPolicy';
 
 // India-first signup: phone is required (a primary contact + alternate login identity).
 const schema = z.object({
@@ -20,8 +21,10 @@ const schema = z.object({
   lastName: z.string().min(1, 'Last name is required'),
   email: z.string().email('Enter a valid email'),
   phone: z.string().min(10, 'Enter a valid phone number'),
-  // Backend PasswordPolicy: min 8 chars incl. a letter and a digit.
-  password: z.string().regex(/^(?=.*[A-Za-z])(?=.*\d).{8,}$/, 'At least 8 chars, incl. a letter and a digit'),
+  // Backend PasswordPolicy mirror (see lib/passwordPolicy): min 10 chars incl. a letter and a digit, not common.
+  password: z.string()
+    .regex(STRONG_PASSWORD, 'At least 10 chars, incl. a letter and a digit')
+    .refine((p) => !isCommonPassword(p), 'Password is too common; choose a less guessable password'),
 });
 type Values = z.infer<typeof schema>;
 

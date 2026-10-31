@@ -2,6 +2,7 @@ package com.webappfoundation.config;
 
 import com.webappfoundation.security.JwtAuthFilter;
 import com.webappfoundation.service.UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -12,10 +13,17 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -24,6 +32,10 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+
+    /** Comma-separated exact origin allowlist (e.g. the site's CloudFront domain). Empty = deny all cross-origin. */
+    @Value("${app.cors.allowed-origins:}")
+    private String allowedOrigins;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter, UserService userService, PasswordEncoder passwordEncoder) {
         this.jwtAuthFilter = jwtAuthFilter;
@@ -34,6 +46,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/api/v1/auth/**", "/", "/index.html", "/static/**", "/*.js", "/*.css", "/*.json", "/*.ico", "/assets/**").permitAll()
@@ -48,6 +61,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/v1/admin/orders/*/stage").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/orders/*/block", "/api/v1/admin/orders/*/resume").hasAnyAuthority("STAFF", "ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasAnyAuthority("ADMIN", "SUPER_ADMIN")
+                        // Payments: the gateway webhook is server-to-server (verifies its own signature)
+                        // so it stays public; opening/verifying a payment requires an authenticated user.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
+                        .requestMatchers("/api/v1/payments/**").authenticated()
                         .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session
@@ -68,5 +85,28 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
+    }
+
+    /**
+     * Strict CORS allowlist. Only the exact origins in {@code app.cors.allowed-origins} may call the API
+     * from a browser; an empty list means no cross-origin access. Never uses a "*" wildcard because the
+     * client sends a bearer token (credentials). Dev defaults to localhost; prod must set the site origin.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        List<String> origins = allowedOrigins == null || allowedOrigins.isBlank()
+                ? List.of()
+                : Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(origins);
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", config);
+        return source;
     }
 }

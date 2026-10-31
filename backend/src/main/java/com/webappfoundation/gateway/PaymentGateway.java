@@ -18,7 +18,10 @@ public interface PaymentGateway {
     /** Verifies the client-side payment signature returned by the checkout widget. */
     boolean verifySignature(String orderId, String paymentId, String signature);
 
-    /** Verifies a server-to-server webhook signature. Returns true when there is nothing to verify against. */
+    /**
+     * Verifies a server-to-server webhook signature. MUST fail closed: if no secret is configured the
+     * webhook cannot be verified and should be rejected (return false), never trusted by default.
+     */
     boolean verifyWebhook(String payload, String signature);
 
     /**

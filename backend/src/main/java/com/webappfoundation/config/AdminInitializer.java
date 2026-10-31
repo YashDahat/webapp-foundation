@@ -26,8 +26,15 @@ public class AdminInitializer implements CommandLineRunner {
     @Value("${admin.phone:+910000000000}")
     private String adminPhone;
 
-    @Value("${admin.password:changeme123}")
+    @Value("${admin.password:}")
     private String adminPassword;
+
+    /** Dev-only escape hatch. Prod keeps this false so a blank/known-default password can never seed an admin. */
+    @Value("${admin.allow-insecure-default:false}")
+    private boolean allowInsecureDefault;
+
+    /** The demo password shipped in the dev profile; rejected unless {@link #allowInsecureDefault}. */
+    private static final String KNOWN_DEFAULT_PASSWORD = "changeme123";
 
     public AdminInitializer(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
@@ -36,6 +43,12 @@ public class AdminInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        if (!allowInsecureDefault
+                && (adminPassword == null || adminPassword.isBlank() || KNOWN_DEFAULT_PASSWORD.equals(adminPassword))) {
+            throw new IllegalStateException(
+                    "admin.password (env ADMIN_PASSWORD) must be set to a non-default value. Refusing to seed "
+                            + "the SUPER_ADMIN with a blank or known-default password.");
+        }
         User admin = userRepository.findByEmail(adminEmail).orElse(null);
         if (admin == null) {
             userRepository.save(User.builder()

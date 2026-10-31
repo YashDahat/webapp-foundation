@@ -31,7 +31,7 @@
         ]
       },
       "config": {
-        "env": ["JWT_SECRET", "OTP_TTL_MINUTES", "APP_BASE_URL"],
+        "env": ["JWT_SECRET", "JWT_CHALLENGE_EXPIRATION_MS", "OTP_TTL_MINUTES", "APP_BASE_URL", "APP_CORS_ALLOWED_ORIGINS", "SPRING_PROFILES_ACTIVE", "ADMIN_ALLOW_INSECURE_DEFAULT", "LOGIN_MAX_ATTEMPTS", "LOGIN_LOCKOUT_MINUTES"],
         "compose": []
       }
     },
@@ -118,7 +118,7 @@
         "pages": [{ "key": "CHECKOUT", "gate": "AUTH", "nav": false }]
       },
       "config": {
-        "env": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+        "env": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET", "RAZORPAY_WEBHOOK_ALLOW_UNSIGNED"],
         "compose": []
       }
     },

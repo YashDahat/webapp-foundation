@@ -20,11 +20,13 @@ public class RazorpayPaymentGateway implements PaymentGateway {
     private final String keyId;
     private final String keySecret;
     private final String webhookSecret;
+    private final boolean allowUnsigned;
 
-    public RazorpayPaymentGateway(String keyId, String keySecret, String webhookSecret) {
+    public RazorpayPaymentGateway(String keyId, String keySecret, String webhookSecret, boolean allowUnsigned) {
         this.keyId = keyId;
         this.keySecret = keySecret;
         this.webhookSecret = webhookSecret;
+        this.allowUnsigned = allowUnsigned;
         try {
             this.client = new RazorpayClient(keyId, keySecret);
         } catch (RazorpayException e) {
@@ -67,7 +69,9 @@ public class RazorpayPaymentGateway implements PaymentGateway {
     @Override
     public boolean verifyWebhook(String payload, String signature) {
         if (webhookSecret == null || webhookSecret.isBlank()) {
-            return true; // no secret configured — nothing to verify against
+            // Fail CLOSED: with no secret we cannot verify, so reject — unless explicitly allowed
+            // (dev only, razorpay.webhook.allow-unsigned=true). Never true in prod.
+            return allowUnsigned;
         }
         try {
             return Utils.verifyWebhookSignature(payload, signature, webhookSecret);
