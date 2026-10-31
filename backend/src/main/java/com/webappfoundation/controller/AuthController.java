@@ -12,6 +12,7 @@ import com.webappfoundation.model.Role;
 import com.webappfoundation.model.User;
 import com.webappfoundation.repository.UserRepository;
 import com.webappfoundation.security.CurrentUser;
+import com.webappfoundation.security.LoginRateLimiter;
 import com.webappfoundation.security.PasswordPolicy;
 import com.webappfoundation.service.AuditActions;
 import com.webappfoundation.service.AuditService;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -52,13 +54,15 @@ public class AuthController {
     private final PasswordPolicy passwordPolicy;
     private final EmailService emailService;
     private final AuditService auditService;
+    private final LoginRateLimiter loginRateLimiter;
 
     @Value("${app.base-url:http://localhost:8080}")
     private String appBaseUrl;
 
     public AuthController(AuthenticationManager authenticationManager, JwtUtil jwtUtil, UserService userService,
                           UserRepository userRepository, PasswordEncoder passwordEncoder, OtpService otpService,
-                          PasswordPolicy passwordPolicy, EmailService emailService, AuditService auditService) {
+                          PasswordPolicy passwordPolicy, EmailService emailService, AuditService auditService,
+                          LoginRateLimiter loginRateLimiter) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userService = userService;
@@ -68,6 +72,7 @@ public class AuthController {
         this.passwordPolicy = passwordPolicy;
         this.emailService = emailService;
         this.auditService = auditService;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     /**
@@ -77,15 +82,18 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody AuthRequest authRequest) {
+        loginRateLimiter.checkNotLocked(authRequest.getUsername()); // 429 while locked out
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(authRequest.getUsername(), authRequest.getPassword())
             );
         } catch (RuntimeException e) {
+            loginRateLimiter.recordFailure(authRequest.getUsername());
             auditService.recordActor(null, authRequest.getUsername(), null, AuditActions.LOGIN_FAILURE,
                     AuditActions.FAILURE, "USER", authRequest.getUsername(), "bad credentials");
             throw e;
         }
+        loginRateLimiter.reset(authRequest.getUsername());
         final User user = (User) userService.loadUserByUsername(authRequest.getUsername());
 
         if (!user.isEmailVerified()) {
@@ -192,6 +200,7 @@ public class AuthController {
         }
         passwordPolicy.validate(request.getNewPassword());
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setTokenVersion(user.getTokenVersion() + 1); // "log out everywhere" — revoke existing tokens
         userRepository.save(user);
         auditService.record(AuditActions.PASSWORD_CHANGED, AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
         return ResponseEntity.ok().build();
@@ -219,8 +228,15 @@ public class AuthController {
     @PostMapping("/reset-password")
     public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequest request) {
         User user = (User) userService.loadUserByUsername(challengeUsername(request.getToken(), RESET_STAGE));
+        // Single-use: the link must carry the user's current credential version (bumped below on success),
+        // so a reused or stale reset link no longer validates.
+        Long tv = jwtUtil.extractTokenVersion(request.getToken());
+        if (tv == null || tv != user.getTokenVersion()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired link.");
+        }
         passwordPolicy.validate(request.getNewPassword());
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setTokenVersion(user.getTokenVersion() + 1); // revoke this link + all existing sessions
         userRepository.save(user);
         auditService.recordActor(user.getId(), user.getEmail(), roleName(user), AuditActions.PASSWORD_RESET,
                 AuditActions.SUCCESS, "USER", String.valueOf(user.getId()), null);
@@ -231,7 +247,14 @@ public class AuthController {
 
     /** A short-lived signed challenge/reset token carrying a stage claim + the user's username (subject). */
     private String challengeToken(User user, String stage) {
-        return jwtUtil.generateToken(Map.of("stage", stage), user.getUsername());
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("stage", stage);
+        // Bind a reset link to the user's current credential version so completing the reset (which
+        // bumps tokenVersion) makes the link single-use.
+        if (RESET_STAGE.equals(stage)) {
+            claims.put("tv", user.getTokenVersion());
+        }
+        return jwtUtil.generateChallengeToken(claims, user.getUsername());
     }
 
     /** Validate a challenge/reset token for the expected stage and return its subject (username). */

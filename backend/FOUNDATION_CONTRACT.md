@@ -15,7 +15,7 @@ resolution is automatic. Match every method signature and field exactly.
 class User {
   Integer id; String firstName; String lastName; String email; String phone; String password; Role role;
   boolean emailVerified;      // set true after the signup OTP is confirmed; login is blocked until then
-  boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts are server-internal)
+  boolean twoFactorEnabled;   // email-OTP 2FA opt-in (otpCodeHash/otpExpiresAt/otpAttempts + tokenVersion are server-internal)
 }
 enum Role { SUPER_ADMIN, ADMIN, STAFF, USER }   // authority is the bare name; SUPER_ADMIN = single-holder, all ADMIN rights + can delete users
 // STAFF = operational role below ADMIN. SecurityConfig grants it a NARROW /admin/** allowlist — only the order board:
@@ -67,7 +67,13 @@ Auth endpoints (already implemented — do not rebuild). `LoginResponse` is retu
 `/register`: `LoginResponse { String token; boolean twoFactorRequired; boolean verificationRequired; String challengeId }`.
 `token` set = logged in; `twoFactorRequired` = finish via /verify-2fa; `verificationRequired` = email
 not verified, finish via /verify-signup. A 6-digit OTP is emailed for either challenge.
-- `POST /api/v1/auth/register` · body `RegisterRequest { firstName; lastName; email; phone; password }` → 201; always role USER, created **unverified**, emails an OTP and returns `LoginResponse { verificationRequired:true, challengeId }` (**no token**). 409 on duplicate email/phone; 400 on weak password (`PasswordPolicy`: ≥ 8 chars incl. a letter and a digit).
+
+**Auth hardening (enforced):** repeated failed logins lock the account out (429) via `LoginRateLimiter`;
+challenge / password-reset links are short-lived (`jwt.challenge-expiration-ms`, 15 min) and a reset
+link is **single-use** (it carries the user's `tokenVersion`, which is bumped on reset). Every access
+token embeds `tokenVersion`; a password change or reset bumps it and thereby **revokes all existing
+tokens** (so a password change logs the user out everywhere).
+- `POST /api/v1/auth/register` · body `RegisterRequest { firstName; lastName; email; phone; password }` → 201; always role USER, created **unverified**, emails an OTP and returns `LoginResponse { verificationRequired:true, challengeId }` (**no token**). 409 on duplicate email/phone; 400 on weak password (`PasswordPolicy`: ≥ 10 chars incl. a letter and a digit, and not a common password).
 - `POST /api/v1/auth/verify-signup` · body `VerifyTwoFactorRequest { challengeId; code }` → verifies OTP, marks account verified, returns `AuthResponse { token }`.
 - `POST /api/v1/auth/login` · body `AuthRequest { username; password }` — **username = email OR phone**. Unverified → `verificationRequired`; else 2FA on → `twoFactorRequired`; else `token`.
 - `POST /api/v1/auth/verify-2fa` · body `VerifyTwoFactorRequest { challengeId; code }` → `AuthResponse { token }`.
@@ -80,7 +86,7 @@ not verified, finish via /verify-signup. A 6-digit OTP is emailed for either cha
 // OTP: issues/verifies the emailed 6-digit code (BCrypt-hashed, TTL + attempt-locked) used by both
 // signup verification and 2FA login. Internal to the auth flow. OTP_TTL_MINUTES controls validity.
 class OtpService { void issue(User u); boolean verify(User u, String code); }
-// PasswordPolicy: min 8 chars incl. a letter + a digit; throws 400 on register/change/reset.
+// PasswordPolicy: min 10 chars incl. a letter + a digit, and not a common password; throws 400 on register/change/reset.
 class PasswordPolicy { void validate(String password); }
 ```
 
@@ -130,8 +136,17 @@ interface PaymentRepository extends JpaRepository<Payment, Long> {
 }
 ```
 
-Endpoints (already implemented): `POST /api/v1/payments/create-order`, `/verify`, `/webhook`.
+Endpoints (already implemented): `POST /api/v1/payments/verify`, `/webhook`. There is **no public
+create-order endpoint** — open a payment order server-side via `PaymentService.createOrder` (the order
+spine does this in `OrderService.placeOrder`), so the amount is never client-chosen.
 `PaymentGateway` is the provider adapter — call payments through `PaymentService`, never the gateway directly.
+
+**Security (enforced — do not bypass):** `verify` requires an authenticated user; `/webhook` is public
+but verifies its own signature and **fails closed** (no secret ⇒ rejected). Set a
+payment's `amount` **server-side** from your entity's authoritative total — never from the client. A
+consumer reacting to `PaymentCapturedEvent` MUST confirm `event.amount` equals its own expected total
+before settling; the fenced order spine refuses to mark an order paid on a mismatch (see
+`OrderService.onPaymentCaptured`, which audits `ORDER_PAYMENT_MISMATCH`).
 
 ## Media library + gallery (image storage)
 

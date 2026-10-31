@@ -8,7 +8,11 @@
 /** Payment lifecycle status — com.webappfoundation.model.PaymentStatus. */
 export type PaymentStatus = 'CREATED' | 'CAPTURED' | 'FAILED';
 
-/** Request body for POST /api/v1/payments/create-order — CreatePaymentRequest. */
+/**
+ * Input to PaymentService.createOrder (server-side) — com.webappfoundation.dto.CreatePaymentRequest.
+ * There is no public create-order endpoint; the amount is set server-side from the authoritative total.
+ * Retained as the typed mirror of the backend DTO.
+ */
 export interface CreatePaymentRequest {
   /** BigDecimal on the wire — amount in major currency units (e.g. rupees). */
   amount: number;
@@ -16,7 +20,7 @@ export interface CreatePaymentRequest {
   referenceId: string;
 }
 
-/** Response body for POST /api/v1/payments/create-order — PaymentOrderResponse. */
+/** Returned when a gateway order is opened server-side (e.g. from placeOrder) — PaymentOrderResponse. */
 export interface PaymentOrderResponse {
   gatewayOrderId: string;
   gatewayKeyId: string;

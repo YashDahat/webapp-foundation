@@ -45,6 +45,8 @@ public final class AuditActions {
     // Orders
     public static final String ORDER_PLACED = "ORDER_PLACED";
     public static final String ORDER_PAID = "ORDER_PAID";
+    /** A captured payment's amount did NOT equal the order's server-computed total — settlement refused. */
+    public static final String ORDER_PAYMENT_MISMATCH = "ORDER_PAYMENT_MISMATCH";
     public static final String ORDER_STAGE_ADVANCED = "ORDER_STAGE_ADVANCED";
     public static final String ORDER_CANCELLED = "ORDER_CANCELLED";
     public static final String ORDER_MARK_PAID = "ORDER_MARK_PAID";
