@@ -676,6 +676,60 @@ Endpoints — public read / auth write (`@CurrentUser`): `GET /api/v1/products/{
 `POST /api/v1/products/{productId}/reviews` (auth upsert), `DELETE /api/v1/products/{productId}/reviews/mine`
 (auth). Admin: `GET /api/v1/admin/reviews`, `DELETE /api/v1/admin/reviews/{id}` (read-only + delete, no bulk).
 
+## Analytics (admin dashboard)
+
+An admin-only business-analytics screen at `/admin/analytics`. Sales / bills / customers / average-bill
+are **derived from paid orders** (read-only over the order spine — the spine is never touched); profit,
+margins and complaints fold in the owner's end-of-day `DailyBusinessLog`. Targets are **weekday-aware** —
+a day's target is the trailing average of its own recent weekdays × an optional growth factor, so Monday
+is judged against Mondays. Comparisons: Today → last same weekday, This week → last week, This month →
+last month, This year → last year. Inject `AnalyticsService`; do NOT re-declare it.
+
+```java
+// The owner's end-of-day entry (the only figures orders can't know). One row per day (unique logDate).
+class DailyBusinessLog { Long id; LocalDate logDate; BigDecimal cogs; BigDecimal operatingExpenses;
+                         int complaints; String note; Instant createdAt; Instant updatedAt; }  // table "daily_business_log"
+interface DailyBusinessLogRepository extends JpaRepository<DailyBusinessLog, Long> {
+  Optional<DailyBusinessLog> findByLogDate(LocalDate logDate);
+  List<DailyBusinessLog> findByLogDateBetween(LocalDate from, LocalDate to);
+  boolean existsByLogDate(LocalDate logDate);
+  List<DailyBusinessLog> findAllByOrderByLogDateDesc();
+}
+// Read-only aggregation over Order for the dashboard — a SEPARATE repo from the fenced OrderRepository,
+// so the order spine is untouched. "A sale" = PAID | REFUND_PENDING | REFUNDED; net = total − refundAmount.
+interface AnalyticsOrderRepository extends Repository<Order, Long> {
+  List<Order> findByPaymentStateInAndCreatedAtBetween(Collection<PaymentState> states, Instant from, Instant to);
+  BigDecimal sumNetSales(Collection<PaymentState> states, Instant from, Instant to);     // @Query scalar
+  List<UserFirstOrder> findFirstOrderInstants(Collection<PaymentState> states);           // new-vs-repeat
+  Optional<Order> findFirstByPaymentStateInOrderByCreatedAtAsc(Collection<PaymentState> states);
+  interface UserFirstOrder { Integer getUserId(); Instant getFirstAt(); }
+}
+
+class AnalyticsService {
+  AnalyticsSummaryDto summary(String period, Long branchId);          // period = TODAY|WEEK|MONTH|YEAR; branchId null = all outlets
+  List<DailyBusinessLogDto> listLogs();
+  DailyBusinessLogDto getLog(LocalDate date);
+  DailyBusinessLogDto upsert(UpsertDailyBusinessLogRequest req);      // upsert by logDate
+  void deleteLog(Long id);
+  BulkUploadResult bulkImport(MultipartFile file);                   // columns: date,cogs,operatingExpenses,complaints,note
+}
+
+// DTOs
+class DailyBusinessLogDto           { Long id; LocalDate logDate; BigDecimal cogs; BigDecimal operatingExpenses; int complaints; String note; Instant createdAt; Instant updatedAt; }
+class UpsertDailyBusinessLogRequest { LocalDate logDate; BigDecimal cogs; BigDecimal operatingExpenses; Integer complaints; String note; }
+class AnalyticsSummaryDto { String period; Long branchId; LocalDate asOf; String currency; int outletCount;
+  Banner banner; List<KpiCard> kpis; TargetProgress targetProgress; Projection projection; DayByDay dayByDay;
+  List<AttentionItem> attention; List<WeekdayStat> weekdays; List<YearlyStat> yearly; List<BranchStat> branches; }
+// nested static classes: Banner, KpiCard, TargetProgress, Projection, CumulativePoint, DayByDay, DayBar,
+// AttentionItem, WeekdayStat, YearlyStat, BranchStat. Percentage fields are FRACTIONS (0.19 = +19%);
+// KpiCard.display is pre-formatted ₹ L/Cr; AttentionItem.severity = ACT_NOW | WATCH.
+```
+Endpoints (ADMIN): `GET /api/v1/admin/analytics?period=&branchId=` → `AnalyticsSummaryDto`. Daily log:
+`GET /api/v1/admin/analytics/daily-log`, `GET /daily-log/{date}`, `POST|PUT /daily-log` (upsert by date),
+`DELETE /daily-log/{id}`, `POST /daily-log/bulk-upload` → `BulkUploadResult`. Config
+(`application.properties`): `analytics.zone`, `analytics.fy-start-month`, `analytics.target-growth-pct`,
+`analytics.annual-revenue-target` (annual revenue goal in absolute ₹; 0 = no goal).
+
 ## Shared exceptions
 
 ```java

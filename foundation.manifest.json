@@ -532,6 +532,37 @@
         ]
       },
       "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "analytics",
+      "core": false,
+      "requires": ["orders"],
+      "backend": {
+        "controllers": ["admin/AdminAnalyticsController.java"],
+        "packages": [],
+        "fenced": [
+          "DailyBusinessLog", "DailyBusinessLogRepository", "AnalyticsOrderRepository",
+          "AnalyticsService", "AnalyticsSummaryDto", "DailyBusinessLogDto", "UpsertDailyBusinessLogRequest",
+          "AdminAnalyticsController"
+        ]
+      },
+      "frontend": {
+        "modules": [
+          "/types/analytics", "/services/analyticsservice", "/hooks/analyticshooks",
+          "/pages/admin/adminanalyticspage", "/components/admin/analytics"
+        ],
+        "guards": [],
+        "fenced": [
+          "analyticsService", "AdminAnalyticsPage", "AnalyticsDashboard", "DailyLogManager"
+        ],
+        "pages": [
+          { "key": "ADMIN_ANALYTICS", "gate": "ADMIN", "nav": true }
+        ]
+      },
+      "config": {
+        "env": ["ANALYTICS_ZONE", "ANALYTICS_FY_START_MONTH", "ANALYTICS_TARGET_GROWTH_PCT", "ANALYTICS_ANNUAL_REVENUE_TARGET"],
+        "compose": []
+      }
     }
   ]
 }
