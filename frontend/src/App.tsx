@@ -22,6 +22,7 @@ import OrderDetailPage from '@/pages/OrderDetailPage'
 import BranchesPage from '@/pages/BranchesPage'
 import SupportPage from '@/pages/SupportPage'
 import AccountPage from '@/pages/AccountPage'
+import LoyaltyTermsPage from '@/pages/LoyaltyTermsPage'
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
 import ResetPasswordPage from '@/pages/ResetPasswordPage'
 import AdminMediaPage from '@/pages/admin/AdminMediaPage'
@@ -38,6 +39,14 @@ import AdminBranchesPage from '@/pages/admin/AdminBranchesPage'
 import AdminReviewsPage from '@/pages/admin/AdminReviewsPage'
 import AdminFeedbackPage from '@/pages/admin/AdminFeedbackPage'
 import AdminLogsPage from '@/pages/admin/AdminLogsPage'
+import LoyaltyAdminLayout from '@/components/admin/LoyaltyAdminLayout'
+import LoyaltyOverviewPage from '@/pages/admin/loyalty/OverviewPage'
+import LoyaltyCustomersPage from '@/pages/admin/loyalty/CustomersPage'
+import LoyaltyCodesPage from '@/pages/admin/loyalty/CodesPage'
+import LoyaltyTriggersPage from '@/pages/admin/loyalty/TriggersPage'
+import LoyaltyTiersPage from '@/pages/admin/loyalty/TiersPage'
+import LoyaltyScoringPage from '@/pages/admin/loyalty/ScoringPage'
+import LoyaltySettingsPage from '@/pages/admin/loyalty/SettingsPage'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/RequireAdmin'
 import RequireBoardAccess from '@/components/RequireBoardAccess'
@@ -81,6 +90,7 @@ export default function App() {
                 <Route path="/events/:slug" element={<EventDetailPage />} />
                 <Route path="/branches" element={<BranchesPage />} />
                 <Route path="/gallery" element={<GalleryPage />} />
+                <Route path="/loyalty-terms" element={<LoyaltyTermsPage />} />
                 <Route path="/support" element={<RequireAuth><SupportPage /></RequireAuth>} />
                 <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
                 <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
@@ -112,6 +122,16 @@ export default function App() {
                 <Route path="branches" element={<RequireAdmin><AdminBranchesPage /></RequireAdmin>} />
                 <Route path="reviews" element={<RequireAdmin><AdminReviewsPage /></RequireAdmin>} />
                 <Route path="feedback" element={<RequireAdmin><AdminFeedbackPage /></RequireAdmin>} />
+                {/* Discount & Loyalty section — tabbed sub-pages under one admin nav entry. */}
+                <Route path="loyalty" element={<RequireAdmin><LoyaltyAdminLayout /></RequireAdmin>}>
+                  <Route index element={<LoyaltyOverviewPage />} />
+                  <Route path="customers" element={<LoyaltyCustomersPage />} />
+                  <Route path="codes" element={<LoyaltyCodesPage />} />
+                  <Route path="triggers" element={<LoyaltyTriggersPage />} />
+                  <Route path="tiers" element={<LoyaltyTiersPage />} />
+                  <Route path="scoring" element={<LoyaltyScoringPage />} />
+                  <Route path="settings" element={<LoyaltySettingsPage />} />
+                </Route>
                 <Route path="logs" element={<RequireAdmin><AdminLogsPage /></RequireAdmin>} />
               </Route>
             </Routes>

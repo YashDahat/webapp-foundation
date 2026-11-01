@@ -532,6 +532,46 @@
         ]
       },
       "config": { "env": [], "compose": [] }
+    },
+    {
+      "id": "loyalty",
+      "core": false,
+      "requires": ["orders", "auth", "catalog"],
+      "backend": {
+        "controllers": ["LoyaltyController.java", "admin/AdminLoyaltyController.java", "admin/AdminOfferController.java"],
+        "packages": [],
+        "fenced": [
+          "Tier", "LoyaltyEventType", "LoyaltyEventStatus", "CoinStatus", "OfferType", "OfferStatus", "OfferTrigger",
+          "LoyaltyProfile", "LoyaltyEvent", "CoinLedgerEntry", "Offer", "Redemption", "DiscountBudget",
+          "LoyaltyTier", "LoyaltyEventRule", "LoyaltyTriggerConfig", "LoyaltySettings",
+          "LoyaltyProfileRepository", "LoyaltyEventRepository", "CoinLedgerEntryRepository", "OfferRepository",
+          "RedemptionRepository", "DiscountBudgetRepository", "LoyaltyTierRepository", "LoyaltyEventRuleRepository",
+          "LoyaltyTriggerConfigRepository", "LoyaltySettingsRepository",
+          "LoyaltySettingsService", "LoyaltyConfigService", "DiscountBudgetService", "LoyaltyProfileService", "OfferAdminService",
+          "LoyaltyEventService", "LoyaltyScoreService", "LoyaltyNightlyJob", "CoinService",
+          "OfferService", "BudgetPacingService", "LoyaltyMetricsService",
+          "LoyaltyEarnConnector", "LoyaltyReversalConnector", "CoinRedemptionConnector", "LoyaltyDiscountConnector", "LoyaltyWorkflowBindingInitializer",
+          "LoyaltySettingsDto", "LoyaltyTierDto", "UpdateLoyaltyTierRequest", "LoyaltyEventRuleDto",
+          "UpdateLoyaltyEventRuleRequest", "LoyaltyTriggerConfigDto", "UpdateLoyaltyTriggerConfigRequest",
+          "DiscountBudgetDto", "UpsertDiscountBudgetRequest", "OfferDto", "CreateOfferRequest", "LoyaltyProfileDto",
+          "LoyaltyMeDto", "RecordActivityRequest", "TrackingConsentRequest", "CoinLedgerDto",
+          "OfferValidationResult", "ValidateOfferRequest", "LoyaltyMetricsDto",
+          "LoyaltyController", "AdminLoyaltyController", "AdminOfferController", "LoyaltySeedInitializer"
+        ]
+      },
+      "frontend": {
+        "modules": [
+          "/types/loyalty", "/services/loyaltyservice", "/hooks/loyaltyhooks",
+          "/pages/admin/loyalty", "/pages/loyaltytermspage", "/components/admin/loyaltyadminlayout", "/components/loyalty"
+        ],
+        "guards": [],
+        "fenced": ["loyaltyService", "LoyaltyAdminLayout", "LoyaltyCard", "LoyaltyTermsPage"],
+        "pages": [
+          { "key": "ADMIN_LOYALTY", "gate": "ADMIN", "nav": true },
+          { "key": "LOYALTY_TERMS", "gate": "PUBLIC", "nav": false }
+        ]
+      },
+      "config": { "env": ["LOYALTY_NIGHTLY_CRON"], "compose": [] }
     }
   ]
 }

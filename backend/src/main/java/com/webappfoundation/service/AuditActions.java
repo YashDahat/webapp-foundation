@@ -86,6 +86,21 @@ public final class AuditActions {
     public static final String REVIEW_SUBMITTED = "REVIEW_SUBMITTED";
     public static final String REVIEW_DELETED = "REVIEW_DELETED";
 
+    // Discount & loyalty — admin config
+    public static final String LOYALTY_SETTINGS_UPDATED = "LOYALTY_SETTINGS_UPDATED";
+    public static final String LOYALTY_TIER_UPDATED = "LOYALTY_TIER_UPDATED";
+    public static final String LOYALTY_EVENT_RULE_UPDATED = "LOYALTY_EVENT_RULE_UPDATED";
+    public static final String LOYALTY_TRIGGER_UPDATED = "LOYALTY_TRIGGER_UPDATED";
+    public static final String LOYALTY_BUDGET_UPSERTED = "LOYALTY_BUDGET_UPSERTED";
+    // Discount & loyalty — codes / coins
+    public static final String LOYALTY_OFFER_CREATED = "LOYALTY_OFFER_CREATED";
+    public static final String LOYALTY_OFFER_REVOKED = "LOYALTY_OFFER_REVOKED";
+    public static final String LOYALTY_OFFER_BULK_IMPORT = "LOYALTY_OFFER_BULK_IMPORT";
+    public static final String LOYALTY_OFFER_ISSUED = "LOYALTY_OFFER_ISSUED";
+    public static final String LOYALTY_CODE_REDEEMED = "LOYALTY_CODE_REDEEMED";
+    public static final String LOYALTY_COINS_ADJUSTED = "LOYALTY_COINS_ADJUSTED";
+    public static final String LOYALTY_COINS_REDEEMED = "LOYALTY_COINS_REDEEMED";
+
     // Outcomes
     public static final String SUCCESS = "SUCCESS";
     public static final String FAILURE = "FAILURE";

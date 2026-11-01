@@ -691,6 +691,124 @@ Endpoints — public read / auth write (`@CurrentUser`): `GET /api/v1/products/{
 `POST /api/v1/products/{productId}/reviews` (auth upsert), `DELETE /api/v1/products/{productId}/reviews/mine`
 (auth). Admin: `GET /api/v1/admin/reviews`, `DELETE /api/v1/admin/reviews/{id}` (read-only + delete, no bulk).
 
+## Discount & Loyalty
+
+A behaviour-driven loyalty + discount engine. A **Loyalty Score** (engagement, never spent) sets a **Tier**;
+**Reward Coins** are a redeemable ledger; discount **Offers** (codes) are issued by triggers and redeemed at
+checkout as a negative `OrderAdjustment` via a `DISCOUNT` connector (never a new order path). The whole
+discount/promotion side has a client-controllable master kill switch (`LoyaltySettings.discountsEnabled`): when
+off, scoring + tiers keep running but no offers/codes/coin-redemption happen. Loyalty state is kept 1:1 with the
+user in `LoyaltyProfile` (never widens the fenced `User`). Config (tiers, event rules, triggers, settings) is
+seeded on startup by `LoyaltySeedInitializer` (no Flyway; `ddl-auto`).
+
+```java
+enum Tier { BRONZE, SILVER, GOLD, PLATINUM }
+enum LoyaltyEventType { SIGNUP, PROFILE_COMPLETE, DAILY_VISIT, PRODUCT_VIEW, WISHLIST, ADD_TO_CART, PURCHASE,
+  REVIEW, REVIEW_MEDIA, SHARE_CLICK, REFERRAL_SIGNUP, REFERRAL_PURCHASE, NOTIF_OPT_IN }
+enum LoyaltyEventStatus { PENDING, CONFIRMED, REVERSED }
+enum CoinStatus { PENDING, CONFIRMED, REVERSED, EXPIRED }
+enum OfferType { PCT, FLAT, FREE_SHIP, GIFT, COINS }
+enum OfferStatus { ACTIVE, USED, EXPIRED, REVOKED }
+enum OfferTrigger { WELCOME, ABANDONED_CART, WIN_BACK, TIER_UP, MILESTONE, BIRTHDAY, SLOW_STOCK, FESTIVE, SURPRISE, MANUAL }
+
+class LoyaltyProfile { Integer userId /*PK = User.id*/; Tier tier; BigDecimal score; Instant scoreUpdatedAt;
+  BigDecimal coinBalance; BigDecimal avgOrderValue; Integer usualOrderGapDays; Instant lastOrderAt;
+  BigDecimal returnRate; boolean inHoldout; LocalDate birthday; Instant profileCompletedAt;
+  Tier pendingDowngradeTier; Instant downgradeEffectiveAt; Instant trackingConsentAt; Instant createdAt, updatedAt; }
+class LoyaltyEvent { Long id; Integer userId; LoyaltyEventType type; BigDecimal points; LoyaltyEventStatus status;
+  Long orderId; String metaJson; Instant createdAt; Instant confirmAt; }
+class CoinLedgerEntry { Long id; Integer userId; BigDecimal coins /*signed*/; String reason; Long orderId;
+  CoinStatus status; Instant earnedAt; Instant expiresAt; }
+class Offer { Long id; String code /*unique*/; Integer userId /*null=public*/; OfferTrigger trigger; Integer rung;
+  OfferType type; BigDecimal value; BigDecimal minSpend; BigDecimal maxDiscount; Integer maxUses; Integer usedCount;
+  Instant startsAt, expiresAt; String campaignId; OfferStatus status; Integer manualApprovedBy; Instant createdAt; }
+class Redemption { Long id; String code; Long orderId; Integer userId; BigDecimal discountValue;
+  BigDecimal grossMarginAfter; Instant createdAt; }
+class DiscountBudget { Long id; String month /*yyyy-MM, unique*/; BigDecimal budgetAmount; BigDecimal spentToDate; }
+class LoyaltyTier { Long id; Tier tier /*unique*/; String name; Integer minScore; BigDecimal coinsPer100; String perks; }
+class LoyaltyEventRule { Long id; LoyaltyEventType eventType /*unique*/; BigDecimal points; Integer perDayCap;
+  boolean onceOnly; boolean earnsCoins; }
+class LoyaltyTriggerConfig { Long id; OfferTrigger trigger /*unique*/; boolean enabled; String rungsJson; Integer expiryDays; }
+class LoyaltySettings { Long id /*=1*/; boolean discountsEnabled; BigDecimal coinValue; Integer maxCoinPctOfOrder;
+  BigDecimal minOrderForCoins; Integer coinExpiryMonths; Integer scoreHalfLifeDays; Integer dailyCap; Integer monthlyCap;
+  Integer holdoutPct; Integer discountPctTarget; Integer returnRateBlockPct; Integer newCodeCooldownDays;
+  Integer returnWindowDays; Integer marginFloorPct; }
+
+// Loyalty Score engine (Phase 1)
+class LoyaltyEventService {                                   // best-effort, never throws to the caller
+  void ensureBootstrap(Integer userId);                      // materialise profile (+ one-time SIGNUP points)
+  void record(Integer userId, LoyaltyEventType type, Long orderId, Map<String,Object> meta);  // applies caps/once-only/pending
+  void recordActivity(Integer userId, LoyaltyEventType type, String itemType, Long itemId);   // beacon; requires tracking consent
+}
+class LoyaltyScoreService { int recomputeAll(); LoyaltyProfile recompute(Integer userId); }   // Σ points·½^(age/halfLife); tier up instant, down after 30d grace
+class LoyaltyNightlyJob { int runNow(); }                    // @Scheduled(loyalty.nightly-cron): confirm events + coins, expire coins, recomputeAll
+
+// Reward coins (Phase 2) — ledger + redemption via the fenced order/connector spine
+class CoinService {
+  BigDecimal spendable(Integer userId); List<CoinLedgerDto> history(Integer userId);
+  BigDecimal earnForOrder(Integer userId, BigDecimal orderTotal, Long orderId);   // pending; floor(total/100 × tier.coinsPer100)
+  BigDecimal redeemForOrder(Integer userId, BigDecimal rupeesOff, Long orderId);  // atomic, never overdraws
+  void reverseForOrder(Long orderId); int confirmDueEarnings(); int expireDueCoins();
+}
+// Connectors (auto-bound into every workflow by LoyaltyWorkflowBindingInitializer; admin may re-order/disable at /admin/workflow):
+//   LoyaltyEarnConnector   (ActionConnector id "loyalty.earn", on the onPaidEntry stage) — award coins + PURCHASE points + commit coin redemption
+//   LoyaltyReversalConnector (ActionConnector id "loyalty.reverse", on the CANCELLED stage) — reverse coins + purchase points
+//   CoinRedemptionConnector (QuoteConnector id "loyalty.coins", category DISCOUNT) — offers "use N coins" (≤maxCoinPctOfOrder%, ≥minOrderForCoins); negative OrderAdjustment, decremented on the paid stage; suppressed when discountsEnabled=false
+// DTO: CoinLedgerDto { Long id; BigDecimal coins /*signed*/; String reason; CoinStatus status; Instant earnedAt, expiresAt; }
+
+// Discount offer engine (Phase 3) — gated by discountsEnabled; holdout never gets codes
+class OfferService {
+  Offer decideOffer(Integer userId, OfferTrigger trigger, BigDecimal cartSubtotal);  // guards → cheapest rung → budget → size → issue + email
+  void checkTimeTriggers(LoyaltyProfile p);                                           // nightly: win-back + birthday
+  OfferValidationResult validate(Integer userId, String code, BigDecimal subtotal);   // checkout preview / connector
+  BigDecimal discountAmountFor(Offer offer, BigDecimal subtotal);
+  void commitRedemption(Order order, OrderAdjustment adj);                            // paid stage: atomic usedCount + Redemption + budget spend
+}
+class BudgetPacingService { BigDecimal paceFactor(); boolean budgetExhausted(); void recordSpend(BigDecimal amount); }
+// Connector: LoyaltyDiscountConnector (QuoteConnector id "loyalty.discount", category DISCOUNT) — reads the typed code
+//   from CheckoutContext.selections, validates, returns a negative OrderAdjustment; committed on the paid stage by LoyaltyEarnConnector.
+// Triggers fire from: WELCOME (first /me bootstrap), SURPRISE (post-paid, Silver+ 10%), WIN_BACK/BIRTHDAY (nightly). Festive = admin campaign codes.
+// Sizing: d = min(base × tierFactor(1.0–1.3) × churn(1.0–1.5) × pace(0.5–1.2), 20%, rung.maxDiscount); minSpend ≈ round(1.25×AOV), ≥₹500.
+// DTOs: OfferValidationResult { boolean valid; String code; BigDecimal amount; String message; }, ValidateOfferRequest { String code; BigDecimal subtotal; }
+
+// Metrics dashboard (Phase 4) — judged against the holdout, feeds the growth tracker (Discount %, Repeat %, incremental revenue)
+class LoyaltyMetricsService { LoyaltyMetricsDto metrics(); }
+// LoyaltyMetricsDto { long members, holdout; BudgetMetrics budget; BigDecimal coinLiability; List<TierCount> tierMix;
+//   List<TriggerStat> redemptionByTrigger; HoldoutComparison holdoutComparison; }  (nested: BudgetMetrics, TierCount, TriggerStat, HoldoutComparison)
+// Admin endpoint: GET /api/v1/admin/loyalty/metrics. Abuse controls: holdout + return-rate block + one-code/cooldown guards
+// (OfferService), manual/public codes carry the approving staff id + audit (OfferAdminService). Compliance: public /loyalty-terms
+// page (coins are a discount not cash; real expiry only), DPDP tracking consent + opt-out on the account rewards card.
+// LoyaltyProfileService also exposes: LoyaltyMeDto me(Integer userId); LoyaltyMeDto setTrackingConsent(Integer userId, boolean consent);
+// DTOs: LoyaltyMeDto, RecordActivityRequest { LoyaltyEventType type; String itemType; Long itemId; }, TrackingConsentRequest { boolean consent; }
+
+// Admin-facing services (all writes audited with LOYALTY_* actions)
+class LoyaltySettingsService { LoyaltySettings get(); boolean discountsEnabled(); LoyaltySettingsDto getDto();
+  LoyaltySettingsDto update(LoyaltySettingsDto req); }
+class LoyaltyConfigService { List<LoyaltyTierDto> listTiers(); LoyaltyTierDto updateTier(Long id, UpdateLoyaltyTierRequest);
+  List<LoyaltyEventRuleDto> listEventRules(); LoyaltyEventRuleDto updateEventRule(Long id, UpdateLoyaltyEventRuleRequest);
+  List<LoyaltyTriggerConfigDto> listTriggers(); LoyaltyTriggerConfigDto updateTrigger(Long id, UpdateLoyaltyTriggerConfigRequest); }
+class DiscountBudgetService { List<DiscountBudgetDto> adminList(); DiscountBudgetDto upsert(UpsertDiscountBudgetRequest); }
+class LoyaltyProfileService { List<LoyaltyProfileDto> adminList(); LoyaltyProfile getOrCreate(Integer userId); }  // getOrCreate assigns the fixed holdout bucket once
+class OfferAdminService { List<OfferDto> adminList(); OfferDto create(CreateOfferRequest, Integer staffId);
+  OfferDto revoke(Long id); BulkUploadResult bulkImport(MultipartFile file); }
+// DTOs: LoyaltySettingsDto, LoyaltyTierDto/UpdateLoyaltyTierRequest, LoyaltyEventRuleDto/UpdateLoyaltyEventRuleRequest,
+// LoyaltyTriggerConfigDto/UpdateLoyaltyTriggerConfigRequest, DiscountBudgetDto/UpsertDiscountBudgetRequest,
+// OfferDto/CreateOfferRequest, LoyaltyProfileDto.
+```
+Endpoints — admin (`/api/v1/admin/**`, ADMIN-gated): `GET/PUT /api/v1/admin/loyalty/settings`;
+`GET /tiers`, `PUT /tiers/{id}`; `GET /event-rules`, `PUT /event-rules/{id}`; `GET /triggers`, `PUT /triggers/{id}`;
+`GET /budgets`, `POST /budgets` (upsert); `GET /customers` (read-only); and codes under
+`GET /api/v1/admin/loyalty/offers`, `POST /api/v1/admin/loyalty/offers` (manual/public, `@CurrentUser` staff id),
+`POST /api/v1/admin/loyalty/offers/{id}/revoke`, `POST /api/v1/admin/loyalty/offers/bulk-upload` (campaign codes),
+and `POST /api/v1/admin/loyalty/run-nightly` (run the maintenance job now).
+Customer (auth, `@CurrentUser`): `GET /api/v1/loyalty/me` (→ LoyaltyMeDto), `GET /api/v1/loyalty/coins`
+(→ coin ledger history), `POST /api/v1/loyalty/consent` (set DPDP tracking consent), `POST /api/v1/loyalty/activity`
+(behavioural beacon: PRODUCT_VIEW / WISHLIST / ADD_TO_CART / DAILY_VISIT / SHARE_CLICK; requires consent; high-value
+events are server-recorded, not posted here). `POST /api/v1/loyalty/offers/validate` (checkout "have a code?" preview →
+OfferValidationResult). Coin redemption rides `connectorSelections["loyalty.coins"]`; a discount code rides
+`connectorSelections["loyalty.discount"]` (both re-validated + committed server-side on the paid stage).
+Signup points are awarded on first `/me`; review points are recorded server-side when a first review is submitted.
+
 ## Shared exceptions
 
 ```java

@@ -4,6 +4,7 @@ import com.webappfoundation.dto.CreateProductReviewRequest;
 import com.webappfoundation.dto.ProductReviewDto;
 import com.webappfoundation.dto.ProductReviewSummaryDto;
 import com.webappfoundation.exception.ResourceNotFoundException;
+import com.webappfoundation.model.LoyaltyEventType;
 import com.webappfoundation.model.Product;
 import com.webappfoundation.model.ProductReview;
 import com.webappfoundation.model.User;
@@ -34,13 +35,16 @@ public class ProductReviewService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final LoyaltyEventService loyaltyEventService;
 
     public ProductReviewService(ProductReviewRepository reviewRepository, ProductRepository productRepository,
-                                UserRepository userRepository, AuditService auditService) {
+                                UserRepository userRepository, AuditService auditService,
+                                LoyaltyEventService loyaltyEventService) {
         this.reviewRepository = reviewRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.loyaltyEventService = loyaltyEventService;
     }
 
     // ── Public ──
@@ -82,8 +86,10 @@ public class ProductReviewService {
         String userName = displayName(userId);
         Instant now = Instant.now();
 
-        ProductReview review = reviewRepository.findByProductIdAndUserId(productId, userId)
-                .orElseGet(() -> ProductReview.builder().productId(productId).userId(userId).createdAt(now).build());
+        ProductReview existing = reviewRepository.findByProductIdAndUserId(productId, userId).orElse(null);
+        boolean firstReview = existing == null;
+        ProductReview review = existing != null ? existing
+                : ProductReview.builder().productId(productId).userId(userId).createdAt(now).build();
         review.setUserName(userName);
         review.setRating(req.getRating());
         review.setComment(trimToNull(req.getComment()));
@@ -92,6 +98,10 @@ public class ProductReviewService {
 
         auditService.record(AuditActions.REVIEW_SUBMITTED, AuditActions.SUCCESS, "PRODUCT",
                 String.valueOf(productId), "rating=" + saved.getRating());
+        // Loyalty: award review points once per product (upserts/edits don't re-earn). Best-effort — never breaks the review.
+        if (firstReview) {
+            loyaltyEventService.record(userId, LoyaltyEventType.REVIEW, null, Map.of("productId", productId));
+        }
         return toDto(saved, userId, null);
     }
 

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import AddressBook from '@/components/AddressBook';
+import LoyaltyCard from '@/components/loyalty/LoyaltyCard';
 import { validatePassword } from '@/lib/passwordPolicy';
 
 /**
@@ -36,6 +37,7 @@ export default function AccountPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
       <h1 className="text-2xl font-bold">Account</h1>
+      <LoyaltyCard />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Security</CardTitle>
