@@ -19,10 +19,10 @@ export default function LoyaltyAdminLayout() {
       isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
     }`;
 
-  // Bounded-height panel: the heading + tab strip stay pinned while only the active tab's content scrolls,
-  // so the whole admin page no longer moves. Height = viewport minus the admin header + page padding.
+  // Bounded-height panel: the heading + tab strip stay pinned while only the active tab's content scrolls.
+  // Fills the admin shell's scrollable <main> (h-full), so no viewport magic numbers are needed.
   return (
-    <div className="flex h-[calc(100vh-7.5rem)] flex-col">
+    <div className="flex h-full flex-col">
       <div className="shrink-0 space-y-4">
         <div>
           <h1 className="text-2xl font-bold">Loyalty &amp; Discounts</h1>

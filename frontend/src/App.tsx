@@ -38,6 +38,7 @@ import AdminConnectorsPage from '@/pages/admin/AdminConnectorsPage'
 import AdminBranchesPage from '@/pages/admin/AdminBranchesPage'
 import AdminReviewsPage from '@/pages/admin/AdminReviewsPage'
 import AdminFeedbackPage from '@/pages/admin/AdminFeedbackPage'
+import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage'
 import AdminLogsPage from '@/pages/admin/AdminLogsPage'
 import LoyaltyAdminLayout from '@/components/admin/LoyaltyAdminLayout'
 import LoyaltyOverviewPage from '@/pages/admin/loyalty/OverviewPage'
@@ -132,6 +133,7 @@ export default function App() {
                   <Route path="scoring" element={<LoyaltyScoringPage />} />
                   <Route path="settings" element={<LoyaltySettingsPage />} />
                 </Route>
+                <Route path="analytics" element={<RequireAdmin><AdminAnalyticsPage /></RequireAdmin>} />
                 <Route path="logs" element={<RequireAdmin><AdminLogsPage /></RequireAdmin>} />
               </Route>
             </Routes>
