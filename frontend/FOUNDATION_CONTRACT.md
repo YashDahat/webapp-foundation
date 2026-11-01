@@ -31,6 +31,7 @@ them and, where noted, add your business content on top.
 | `/admin/workflow` · `/admin/connectors` | — | `RequireAdmin` | The workflow builder (React Flow diagram) + connector toggles. |
 | `/admin/branches` · `/admin/feedback` | — | `RequireAdmin` | Branch admin (+ bulk) · read-only feedback grid. |
 | `/admin/reviews` | `pages/admin/AdminReviewsPage.tsx` | `RequireAdmin` | Product-review moderation grid (delete; no bulk). |
+| `/admin/analytics` | `pages/admin/AdminAnalyticsPage.tsx` | `RequireAdmin` | Business-analytics dashboard (orders-derived KPIs, weekday-aware targets, projection, attention list) + end-of-day log (COGS/expenses/complaints). See "Analytics". |
 
 `LoginPage`/`SignupPage`/`CartPage`/`GalleryPage`/`AdminMediaPage` are **fenced** — do not edit them.
 `CheckoutPage` is foundation-provided but **replaceable**: keep it as-is for a simple flow, or replace
@@ -547,6 +548,26 @@ import { useProductReviews, useSubmitReview, useDeleteMyReview,
 import type { ProductReviewDto, ProductReviewSummaryDto, CreateProductReviewRequest } from '@/types/review';
 // ProductReviewSummaryDto { average; count; distribution: Record<number,number>; reviews: ProductReviewDto[]; myReview? }
 import ProductReviews from '@/components/reviews/ProductReviews';          // <ProductReviews productId={product.id} /> — summary + write/edit form + list
+```
+
+## Analytics — `@/services/analyticsService`, `@/hooks/analyticsHooks` (ADMIN ONLY)
+
+An admin business-analytics dashboard ships PREBUILT at `/admin/analytics` (nav: "Analytics"). Sales / bills /
+customers / average-bill are derived from paid orders; profit, margins and complaints come from the owner's
+end-of-day log (COGS / operating expenses / complaints). Targets are weekday-aware (a day is judged against its
+own past weekdays). Charts use `recharts`. Do NOT rebuild — add business-specific analytics as a new page if
+needed, don't fork this.
+
+```ts
+import { analyticsService } from '@/services/analyticsService';
+import { useAnalyticsSummary, useDailyLogs, useUpsertDailyLog, useDeleteDailyLog } from '@/hooks/analyticsHooks';
+import type { AnalyticsSummary, AnalyticsPeriod, DailyBusinessLogDto, UpsertDailyBusinessLogRequest } from '@/types/analytics';
+// useAnalyticsSummary(period, branchId) — period = 'TODAY'|'WEEK'|'MONTH'|'YEAR'; branchId null = all outlets.
+// AnalyticsSummary { banner; kpis[]; targetProgress; projection; dayByDay; attention[]; weekdays[]; yearly[]; branches[] }.
+// Percentage fields are FRACTIONS (0.19 = +19%); KpiCard.display is pre-formatted ₹ L/Cr.
+import { AnalyticsDashboard } from '@/components/admin/analytics/AnalyticsDashboard';   // <AnalyticsDashboard summary={...} /> — the 6 sections
+import { DailyLogManager } from '@/components/admin/analytics/DailyLogManager';         // grid + entry form + BulkUploadDialog
+import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';                      // the full page (Dashboard + Daily log tabs)
 ```
 
 ---

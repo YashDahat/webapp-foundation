@@ -3,7 +3,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Image, Package, CalendarDays, Sparkles, ShoppingCart, Workflow, Plug, Store, Star,
-  MessageSquare, LifeBuoy, Users, ScrollText, type LucideIcon,
+  MessageSquare, LifeBuoy, Users, ScrollText, BarChart3, type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; testId: string }[] = [
   { to: '/admin/feedback', label: 'Feedback', icon: MessageSquare, testId: 'admin-nav-feedback' },
   { to: '/admin/support', label: 'Support', icon: LifeBuoy, testId: 'admin-nav-support' },
   { to: '/admin/users', label: 'Users', icon: Users, testId: 'admin-nav-users' },
+  { to: '/admin/analytics', label: 'Analytics', icon: BarChart3, testId: 'admin-nav-analytics' },
   { to: '/admin/logs', label: 'Logs', icon: ScrollText, testId: 'admin-nav-logs' },
 ];
 
@@ -46,9 +47,12 @@ export default function AdminLayout() {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`;
 
+  // Fixed-viewport shell: the header and left nav stay put; only <main> scrolls. The outer column is
+  // locked to the viewport height (overflow-hidden) and the content row grows into the remaining space
+  // (flex-1 + min-h-0), so each inner region owns its own scrollbar instead of the whole page scrolling.
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="flex items-center justify-between border-b px-4 py-3">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex shrink-0 items-center justify-between border-b px-4 py-3">
         <Link to="/admin/gallery" className="font-bold">Admin</Link>
         <div className="flex items-center gap-3">
           <Link to="/" className="text-sm text-muted-foreground hover:underline">View site</Link>
@@ -56,8 +60,8 @@ export default function AdminLayout() {
           <Button variant="outline" size="sm" onClick={onLogout} data-testid="admin-logout">Log out</Button>
         </div>
       </header>
-      <div className="mx-auto flex max-w-[90rem] gap-6 px-4 py-6">
-        <aside className="w-48 shrink-0 space-y-1">
+      <div className="mx-auto flex w-full min-h-0 max-w-[90rem] flex-1 gap-6 px-4 py-6">
+        <aside className="w-48 shrink-0 space-y-1 overflow-y-auto">
           {nav.map(({ to, label, icon: Icon, testId }) => (
             <NavLink key={to} to={to} className={linkClass} data-testid={testId}>
               <Icon className="h-4 w-4 shrink-0" />
@@ -65,7 +69,7 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </aside>
-        <main className="min-w-0 flex-1">
+        <main className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>

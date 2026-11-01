@@ -37,6 +37,7 @@ import AdminConnectorsPage from '@/pages/admin/AdminConnectorsPage'
 import AdminBranchesPage from '@/pages/admin/AdminBranchesPage'
 import AdminReviewsPage from '@/pages/admin/AdminReviewsPage'
 import AdminFeedbackPage from '@/pages/admin/AdminFeedbackPage'
+import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage'
 import AdminLogsPage from '@/pages/admin/AdminLogsPage'
 import RequireAuth from '@/components/RequireAuth'
 import RequireAdmin from '@/components/RequireAdmin'
@@ -112,6 +113,7 @@ export default function App() {
                 <Route path="branches" element={<RequireAdmin><AdminBranchesPage /></RequireAdmin>} />
                 <Route path="reviews" element={<RequireAdmin><AdminReviewsPage /></RequireAdmin>} />
                 <Route path="feedback" element={<RequireAdmin><AdminFeedbackPage /></RequireAdmin>} />
+                <Route path="analytics" element={<RequireAdmin><AdminAnalyticsPage /></RequireAdmin>} />
                 <Route path="logs" element={<RequireAdmin><AdminLogsPage /></RequireAdmin>} />
               </Route>
             </Routes>
