@@ -78,6 +78,14 @@ cards). Generated code inherits them; do not reinvent or bypass:
 - **Toasts are global.** `<Toaster/>` is mounted once in the fenced `App.tsx`. Failed API requests
   auto-`toast.error` via the `apiClient` response interceptor — never add a manual `toast.error` after a
   caught request error (double-toast). Wrap mutations in `withToast(promise, 'message')` for success.
+- **Forms validate per the feature.** Every create/edit form MUST validate its inputs against the rules
+  the feature implies (required fields, positive amounts, percentages ≤ 100, date ranges where start <
+  end, values within the domain's bounds, …) and **gate the Save button** (`canSave`) until the form is
+  valid — never rely on the backend alone to reject bad input. **Error display convention:** show all
+  messages in a single error bar at the **top of the form** (a `role="alert"` block) and mark each invalid
+  field with a red border (`border-destructive focus-visible:ring-destructive`). Do **not** put messages
+  below individual fields — it shifts the layout and breaks row alignment. Keep server-side checks as the
+  backstop for data-integrity/security rules.
 - **Admin tables use `AdminDataGrid` (ag-grid), admin-only.** All `/admin/**` data tables render via the
   shared `AdminDataGrid`; public pages keep shadcn `Table`/native — do NOT use ag-grid on public pages.
 - **Bulk upload is compulsory on admin entity tables.** Every admin entity list page ships a

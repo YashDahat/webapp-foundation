@@ -4,7 +4,7 @@ import { loyaltyService } from '@/services/loyaltyService';
 import { withToast } from '@/lib/apiToast';
 import type {
   CreateOfferRequest, LoyaltySettingsDto, UpdateLoyaltyEventRuleRequest, UpdateLoyaltyTierRequest,
-  UpdateLoyaltyTriggerConfigRequest, UpsertDiscountBudgetRequest,
+  UpdateLoyaltyTriggerConfigRequest, UpdateOfferRequest, UpsertDiscountBudgetRequest,
 } from '@/types/loyalty';
 
 // ── Settings ──
@@ -98,10 +98,27 @@ export function useCreateOffer() {
   });
 }
 
+export function useUpdateOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, req }: { id: number; req: UpdateOfferRequest }) =>
+      withToast(loyaltyService.updateOffer(id, req), 'Code updated'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['loyalty-offers'] }),
+  });
+}
+
 export function useRevokeOffer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => withToast(loyaltyService.revokeOffer(id), 'Code revoked'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['loyalty-offers'] }),
+  });
+}
+
+export function useDeleteOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => withToast(loyaltyService.deleteOffer(id), 'Code deleted'),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['loyalty-offers'] }),
   });
 }

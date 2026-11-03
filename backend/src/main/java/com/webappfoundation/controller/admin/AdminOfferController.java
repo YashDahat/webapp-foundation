@@ -3,9 +3,11 @@ package com.webappfoundation.controller.admin;
 import com.webappfoundation.dto.BulkUploadResult;
 import com.webappfoundation.dto.CreateOfferRequest;
 import com.webappfoundation.dto.OfferDto;
+import com.webappfoundation.dto.UpdateOfferRequest;
 import com.webappfoundation.security.CurrentUser;
 import com.webappfoundation.service.OfferAdminService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,9 +39,20 @@ public class AdminOfferController {
         return offerAdminService.create(request, staffId);
     }
 
+    @PutMapping("/{id}")
+    public OfferDto update(@PathVariable Long id, @RequestBody UpdateOfferRequest request) {
+        return offerAdminService.update(id, request);
+    }
+
     @PostMapping("/{id}/revoke")
     public OfferDto revoke(@PathVariable Long id) {
         return offerAdminService.revoke(id);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        offerAdminService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(value = "/bulk-upload", consumes = "multipart/form-data")

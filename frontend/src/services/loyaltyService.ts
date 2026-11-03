@@ -5,7 +5,7 @@ import type {
   CoinLedgerDto, CreateOfferRequest, DiscountBudgetDto, LoyaltyEventRuleDto, LoyaltyMeDto, LoyaltyMetricsDto,
   LoyaltyProfileDto, LoyaltySettingsDto, LoyaltyTierDto, LoyaltyTriggerConfigDto, OfferDto, OfferValidationResult,
   RecordActivityRequest, UpdateLoyaltyEventRuleRequest, UpdateLoyaltyTierRequest, UpdateLoyaltyTriggerConfigRequest,
-  UpsertDiscountBudgetRequest,
+  UpdateOfferRequest, UpsertDiscountBudgetRequest,
 } from '@/types/loyalty';
 
 const BASE = '/api/v1/admin/loyalty';
@@ -98,9 +98,16 @@ export const loyaltyService = {
     const { data } = await apiClient.post<OfferDto>(`${BASE}/offers`, req);
     return data;
   },
+  updateOffer: async (id: number, req: UpdateOfferRequest): Promise<OfferDto> => {
+    const { data } = await apiClient.put<OfferDto>(`${BASE}/offers/${id}`, req);
+    return data;
+  },
   revokeOffer: async (id: number): Promise<OfferDto> => {
     const { data } = await apiClient.post<OfferDto>(`${BASE}/offers/${id}/revoke`);
     return data;
+  },
+  deleteOffer: async (id: number): Promise<void> => {
+    await apiClient.delete(`${BASE}/offers/${id}`);
   },
   bulkUploadOffers: async (file: File): Promise<BulkUploadResult> => {
     const form = new FormData();

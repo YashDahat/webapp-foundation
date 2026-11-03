@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ColDef } from 'ag-grid-community';
 import { AdminDataGrid } from '@/components/admin/AdminDataGrid';
 import {
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 // The numeric knobs, as [field, label, optional suffix] — rendered into a simple grid of inputs.
 const NUMERIC_FIELDS: [keyof LoyaltySettingsDto, string, string?][] = [
@@ -31,14 +32,27 @@ const NUMERIC_FIELDS: [keyof LoyaltySettingsDto, string, string?][] = [
 export default function LoyaltySettingsPage() {
   const { data: settings, isLoading } = useLoyaltySettings();
   const update = useUpdateLoyaltySettings();
+  // Working copy of the numeric knobs while the edit panel is open; null = read-only view.
   const [form, setForm] = useState<LoyaltySettingsDto | null>(null);
-
-  useEffect(() => { if (settings) setForm(settings); }, [settings]);
+  // The value the admin is about to flip the kill switch to — drives the confirm dialog.
+  // null = no pending change; the Switch stays on the saved value until they confirm.
+  const [pendingToggle, setPendingToggle] = useState<boolean | null>(null);
 
   const patch = (p: Partial<LoyaltySettingsDto>) => setForm((f) => (f ? { ...f, ...p } : f));
-  const save = () => { if (form) update.mutate(form); };
 
-  if (isLoading || !form) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (isLoading || !settings) return <p className="text-sm text-muted-foreground">Loading…</p>;
+
+  const startEdit = () => setForm({ ...settings });
+  const cancelEdit = () => setForm(null);
+  // Persist only the knobs; keep the live kill-switch value from the server (it saves on its own).
+  const saveKnobs = () => {
+    if (form) update.mutate({ ...form, discountsEnabled: settings.discountsEnabled }, { onSuccess: () => setForm(null) });
+  };
+  // The kill switch persists immediately once confirmed, independent of the edit panel.
+  const confirmToggle = () => {
+    if (pendingToggle != null) update.mutate({ ...settings, discountsEnabled: pendingToggle });
+    setPendingToggle(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -56,10 +70,10 @@ export default function LoyaltySettingsPage() {
           <div className="flex items-center justify-between rounded-md border p-4">
             <div>
               <Label htmlFor="discounts-enabled" className="text-base">
-                {form.discountsEnabled ? 'Enabled' : 'Disabled'}
+                {settings.discountsEnabled ? 'Enabled' : 'Disabled'}
               </Label>
               <p className="text-sm text-muted-foreground">
-                {form.discountsEnabled
+                {settings.discountsEnabled
                   ? 'Offers, promotion emails and checkout redemption are live.'
                   : 'Scoring continues; all cash discounts, codes and coin redemption are paused.'}
               </p>
@@ -67,42 +81,85 @@ export default function LoyaltySettingsPage() {
             <Switch
               id="discounts-enabled"
               data-testid="loyalty-discounts-enabled"
-              checked={form.discountsEnabled}
-              onCheckedChange={(v) => patch({ discountsEnabled: v })}
+              checked={settings.discountsEnabled}
+              disabled={update.isPending}
+              onCheckedChange={(v) => setPendingToggle(v)}
             />
           </div>
         </CardContent>
       </Card>
 
-      {/* Numeric knobs */}
+      {/* Confirm before flipping the kill switch — it materially moves sales, so make it deliberate. */}
+      <ConfirmDialog
+        open={pendingToggle != null}
+        onOpenChange={() => setPendingToggle(null)}
+        title={pendingToggle ? 'Enable the discount programme?' : 'Disable the discount programme?'}
+        description={
+          pendingToggle ? (
+            <>
+              This turns discount code generation and redemption <strong>back on</strong> for the whole
+              site. Customers feel rewarded for buying from you, so this typically lifts repeat orders and
+              your overall sales numbers. Offers and promotion emails will resume issuing.
+            </>
+          ) : (
+            <>
+              This turns discount code generation and redemption <strong>off</strong> for the whole site.
+              Discounts make customers feel rewarded for buying from you, so switching them off can reduce
+              repeat orders and your overall sales numbers. No new codes or promotions will be issued or
+              emailed, and existing codes and coins can’t be redeemed at checkout. (Scoring and tiers keep
+              running.)
+            </>
+          )
+        }
+        confirmLabel={pendingToggle ? 'Enable discounts' : 'Disable discounts'}
+        destructive={!pendingToggle}
+        onConfirm={confirmToggle}
+      />
+
+      {/* Numeric knobs — read-only until the admin clicks Edit settings. */}
       <Card>
-        <CardHeader>
-          <CardTitle>Programme settings</CardTitle>
-          <CardDescription>Budget, coins, scoring and guard thresholds.</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <CardTitle>Programme settings</CardTitle>
+            <CardDescription>Budget, coins, scoring and guard thresholds.</CardDescription>
+          </div>
+          {!form && (
+            <Button variant="outline" onClick={startEdit} data-testid="loyalty-settings-edit">
+              Edit settings
+            </Button>
+          )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {form && (
+            <div className="flex gap-2">
+              <Button onClick={saveKnobs} disabled={update.isPending} data-testid="loyalty-settings-save">
+                {update.isPending ? 'Saving…' : 'Save settings'}
+              </Button>
+              <Button variant="outline" onClick={cancelEdit} disabled={update.isPending}>
+                Cancel
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {NUMERIC_FIELDS.map(([field, label, suffix]) => (
               <div className="grid gap-2" key={field}>
                 <Label htmlFor={`s-${field}`}>{label}{suffix ? ` (${suffix})` : ''}</Label>
-                <Input
-                  id={`s-${field}`}
-                  type="number"
-                  step="any"
-                  value={String(form[field] ?? '')}
-                  onChange={(e) => patch({ [field]: e.target.value === '' ? 0 : Number(e.target.value) } as Partial<LoyaltySettingsDto>)}
-                />
+                {form ? (
+                  <Input
+                    id={`s-${field}`}
+                    type="number"
+                    step="any"
+                    value={String(form[field] ?? '')}
+                    onChange={(e) => patch({ [field]: e.target.value === '' ? 0 : Number(e.target.value) } as Partial<LoyaltySettingsDto>)}
+                  />
+                ) : (
+                  <p id={`s-${field}`} className="text-sm font-medium">{String(settings[field] ?? '—')}</p>
+                )}
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={save} disabled={update.isPending} data-testid="loyalty-settings-save">
-          {update.isPending ? 'Saving…' : 'Save settings'}
-        </Button>
-      </div>
 
       <BudgetsSection />
     </div>

@@ -21,6 +21,8 @@ interface StepperSheetProps {
   saving?: boolean;
   saveLabel?: string;
   onSave: () => void;
+  /** Max-width class for the panel (defaults to `sm:max-w-2xl`); widen for field-heavy forms. */
+  widthClassName?: string;
 }
 
 /**
@@ -31,7 +33,7 @@ interface StepperSheetProps {
  */
 export function StepperSheet({
   open, onOpenChange, title, description, steps,
-  canSave, saving = false, saveLabel = 'Save', onSave,
+  canSave, saving = false, saveLabel = 'Save', onSave, widthClassName = 'sm:max-w-2xl',
 }: StepperSheetProps) {
   const [active, setActive] = useState(0);
 
@@ -47,7 +49,7 @@ export function StepperSheet({
     <Sheet open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl"
+        className={`flex w-full flex-col gap-0 p-0 ${widthClassName}`}
         onInteractOutside={(e) => saving && e.preventDefault()}
       >
         <SheetHeader className="border-b p-6">

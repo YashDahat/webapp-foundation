@@ -1,5 +1,6 @@
 package com.webappfoundation.dto;
 
+import com.webappfoundation.model.OfferTrigger;
 import com.webappfoundation.model.OfferType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,6 +22,12 @@ import java.time.Instant;
 public class CreateOfferRequest {
     private String code;
     private Integer userId;
+    /**
+     * Reporting/grouping label for the code. Optional — when null it defaults to FESTIVE (public) or
+     * MANUAL (personal). Restricted to admin-creatable categories (see {@code OfferAdminService}); the
+     * engine-issued triggers (WELCOME/WIN_BACK/BIRTHDAY/…) cannot be set by hand.
+     */
+    private OfferTrigger trigger;
     private OfferType type;
     private BigDecimal value;
     private BigDecimal minSpend;

@@ -94,6 +94,8 @@ public final class AuditActions {
     public static final String LOYALTY_BUDGET_UPSERTED = "LOYALTY_BUDGET_UPSERTED";
     // Discount & loyalty — codes / coins
     public static final String LOYALTY_OFFER_CREATED = "LOYALTY_OFFER_CREATED";
+    public static final String LOYALTY_OFFER_UPDATED = "LOYALTY_OFFER_UPDATED";
+    public static final String LOYALTY_OFFER_DELETED = "LOYALTY_OFFER_DELETED";
     public static final String LOYALTY_OFFER_REVOKED = "LOYALTY_OFFER_REVOKED";
     public static final String LOYALTY_OFFER_BULK_IMPORT = "LOYALTY_OFFER_BULK_IMPORT";
     public static final String LOYALTY_OFFER_ISSUED = "LOYALTY_OFFER_ISSUED";

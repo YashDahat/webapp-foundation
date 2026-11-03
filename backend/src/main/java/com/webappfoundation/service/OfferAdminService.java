@@ -3,6 +3,7 @@ package com.webappfoundation.service;
 import com.webappfoundation.dto.BulkUploadResult;
 import com.webappfoundation.dto.CreateOfferRequest;
 import com.webappfoundation.dto.OfferDto;
+import com.webappfoundation.dto.UpdateOfferRequest;
 import com.webappfoundation.exception.ResourceNotFoundException;
 import com.webappfoundation.model.Offer;
 import com.webappfoundation.model.OfferStatus;
@@ -20,8 +21,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -36,6 +39,15 @@ public class OfferAdminService {
 
     private static final String SAFE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * Triggers an admin may hand-pick as a code's reporting label. The time/event-driven triggers
+     * (WELCOME, WIN_BACK, BIRTHDAY, ABANDONED_CART, SLOW_STOCK) are engine-issued only and are rejected
+     * here so manual codes can't masquerade as automatic ones.
+     */
+    private static final Set<OfferTrigger> ADMIN_TRIGGERS = EnumSet.of(
+            OfferTrigger.FESTIVE, OfferTrigger.MANUAL, OfferTrigger.MILESTONE,
+            OfferTrigger.TIER_UP, OfferTrigger.SURPRISE);
 
     private final OfferRepository offerRepository;
     private final UserRepository userRepository;
@@ -81,10 +93,11 @@ public class OfferAdminService {
             throw new ResourceNotFoundException("User not found: " + req.getUserId());
         }
         int maxUses = isPublic ? (req.getMaxUses() == null ? 100 : req.getMaxUses()) : 1;
+        OfferTrigger trigger = resolveTrigger(req.getTrigger(), isPublic);
         Offer offer = Offer.builder()
                 .code(code)
                 .userId(req.getUserId())
-                .trigger(isPublic ? OfferTrigger.FESTIVE : OfferTrigger.MANUAL)
+                .trigger(trigger)
                 .type(req.getType())
                 .value(req.getValue())
                 .minSpend(req.getMinSpend())
@@ -101,7 +114,59 @@ public class OfferAdminService {
         Offer saved = offerRepository.save(offer);
         auditService.record(AuditActions.LOYALTY_OFFER_CREATED, AuditActions.SUCCESS, "LOYALTY_OFFER",
                 String.valueOf(saved.getId()),
-                "code=" + saved.getCode() + " type=" + saved.getType() + " public=" + isPublic);
+                "code=" + saved.getCode() + " type=" + saved.getType() + " trigger=" + saved.getTrigger() + " public=" + isPublic);
+        return toDto(saved, saved.getUserId() == null ? null : userRepository.findById(saved.getUserId()).orElse(null));
+    }
+
+    /** Honour an admin-picked label (restricted to {@link #ADMIN_TRIGGERS}); default to FESTIVE/MANUAL. */
+    private OfferTrigger resolveTrigger(OfferTrigger requested, boolean isPublic) {
+        if (requested == null) {
+            return isPublic ? OfferTrigger.FESTIVE : OfferTrigger.MANUAL;
+        }
+        if (!ADMIN_TRIGGERS.contains(requested)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "trigger '" + requested + "' can't be set on a hand-created code");
+        }
+        return requested;
+    }
+
+    /**
+     * Edit an existing code's campaign parameters. The code string and owning user are immutable; only
+     * the knobs (trigger label, type, value, caps, active window, campaign id) change. {@code maxUses}
+     * can't drop below the uses already redeemed.
+     */
+    @Transactional
+    public OfferDto update(Long id, UpdateOfferRequest req) {
+        if (req.getType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type is required");
+        }
+        Offer offer = offerRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not found: " + id));
+        if (req.getMaxUses() != null && req.getMaxUses() < offer.getUsedCount()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "maxUses can't be below the " + offer.getUsedCount() + " use(s) already redeemed");
+        }
+        // Keep the existing label untouched unless the admin switches it to a different admin category —
+        // this lets engine-issued codes (WELCOME, WIN_BACK, …) be edited without tripping the category guard.
+        if (req.getTrigger() != null && req.getTrigger() != offer.getTrigger()) {
+            if (!ADMIN_TRIGGERS.contains(req.getTrigger())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "trigger '" + req.getTrigger() + "' can't be set on a hand-edited code");
+            }
+            offer.setTrigger(req.getTrigger());
+        }
+        offer.setType(req.getType());
+        offer.setValue(req.getValue());
+        offer.setMinSpend(req.getMinSpend());
+        offer.setMaxDiscount(req.getMaxDiscount());
+        if (req.getMaxUses() != null) offer.setMaxUses(req.getMaxUses());
+        offer.setStartsAt(req.getStartsAt());
+        offer.setExpiresAt(req.getExpiresAt());
+        offer.setCampaignId(req.getCampaignId());
+        Offer saved = offerRepository.save(offer);
+        auditService.record(AuditActions.LOYALTY_OFFER_UPDATED, AuditActions.SUCCESS, "LOYALTY_OFFER",
+                String.valueOf(saved.getId()),
+                "code=" + saved.getCode() + " type=" + saved.getType() + " trigger=" + saved.getTrigger());
         return toDto(saved, saved.getUserId() == null ? null : userRepository.findById(saved.getUserId()).orElse(null));
     }
 
@@ -114,6 +179,23 @@ public class OfferAdminService {
         auditService.record(AuditActions.LOYALTY_OFFER_REVOKED, AuditActions.SUCCESS, "LOYALTY_OFFER",
                 String.valueOf(saved.getId()), "code=" + saved.getCode());
         return toDto(saved, null);
+    }
+
+    /**
+     * Permanently delete a code. Allowed only when it was never redeemed — a used code is kept for its
+     * redemption/budget/audit trail, so callers must {@link #revoke(Long)} that instead.
+     */
+    @Transactional
+    public void delete(Long id) {
+        Offer offer = offerRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not found: " + id));
+        if (offer.getUsedCount() != null && offer.getUsedCount() > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This code has been redeemed — revoke it instead of deleting (keeps the redemption history).");
+        }
+        offerRepository.delete(offer);
+        auditService.record(AuditActions.LOYALTY_OFFER_DELETED, AuditActions.SUCCESS, "LOYALTY_OFFER",
+                String.valueOf(id), "code=" + offer.getCode());
     }
 
     /**

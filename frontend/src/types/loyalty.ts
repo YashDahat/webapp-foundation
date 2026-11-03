@@ -112,9 +112,24 @@ export interface OfferDto {
   createdAt: string;
 }
 
+/** Edit payload for an existing code. `code` and `userId` are immutable, so they're omitted. */
+export interface UpdateOfferRequest {
+  trigger?: OfferTrigger | null;
+  type: OfferType;
+  value?: number | null;
+  minSpend?: number | null;
+  maxDiscount?: number | null;
+  maxUses?: number | null;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  campaignId?: string | null;
+}
+
 export interface CreateOfferRequest {
   code?: string | null;
   userId?: number | null;
+  /** Reporting label; backend restricts hand-created codes to FESTIVE/MANUAL/MILESTONE/TIER_UP/SURPRISE. */
+  trigger?: OfferTrigger | null;
   type: OfferType;
   value?: number | null;
   minSpend?: number | null;

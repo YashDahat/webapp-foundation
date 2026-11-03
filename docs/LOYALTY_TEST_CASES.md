@@ -50,11 +50,14 @@ quick DB query (appendix) for things the UI can't show directly (pending coins, 
 |---|---|---|
 | Load settings | Open Settings tab | "Discount programme" card with an **Enabled/Disabled** toggle + a grid of knobs (budget target, holdout %, coin value, caps, margin floor, …). |
 | Kill-switch copy | Read the toggle description | States that scoring + tiers keep running when off; offers/codes/coin redemption pause. |
-| Toggle off | Switch **Discount programme** off → it saves | Toast "Settings saved"; audit `LOYALTY_SETTINGS_UPDATED` at `/admin/logs`. |
+| Toggle → confirm prompt | Flip the **Discount programme** switch (either direction) | A confirmation dialog opens **before** the toggle moves. Disabling reads "Disable the discount programme?" and warns that discounts make customers feel rewarded, so turning them off can reduce repeat orders / sales (and pauses code generation + redemption); enabling reads "Enable the discount programme?" and notes it typically lifts sales. The switch position does **not** change yet. |
+| Cancel the prompt | In that dialog, click **Cancel** (or press Esc) | Dialog closes; the toggle stays in its original position; nothing is saved. |
+| Toggle off | Flip **Discount programme** off → **Confirm (Disable discounts)** in the dialog | The switch flips to Disabled and saves immediately → toast "Settings saved"; audit `LOYALTY_SETTINGS_UPDATED` at `/admin/logs`. (No separate Save click — the kill switch persists on confirm.) |
 | Overview banner | With it off, open Overview tab | Amber banner: "The discount programme is **off** …". |
-| Edit knobs | Change e.g. "Holdout group" to 15 → **Save settings** | Persisted; reload keeps the value. |
+| Read-only knobs | Open Settings tab, don't click Edit | The knobs grid shows each value as read-only text (not inputs); an **Edit settings** button sits in the card header. |
+| Edit knobs | Click **Edit settings** → inputs appear with **Save settings** + **Cancel** at the top of the card → change e.g. "Holdout group" to 15 → **Save settings** | Persisted; panel returns to read-only; reload keeps the value. **Cancel** instead discards edits and reverts to read-only. |
 | Validation | (API) PUT settings with the body from GET, flipping `discountsEnabled` | 200; `discountsEnabled` reflects the new value. |
-| Re-enable | Toggle it back on → Save | Banner disappears; offers/redemption resume (see §10–12). |
+| Re-enable | Toggle it back on → **Confirm (Enable discounts)** | Saves immediately; banner disappears; offers/redemption resume (see §10–12). |
 
 ## 3. Tiers config (`/admin/loyalty/tiers`)
 
@@ -69,6 +72,7 @@ quick DB query (appendix) for things the UI can't show directly (pending coins, 
 | Feature name | Action performed | Expected outcome |
 |---|---|---|
 | Rules grid | Open Scoring tab | One row per action: SIGNUP 50 (once), PROFILE_COMPLETE 30 (once), DAILY_VISIT 2 (cap 1/day), PRODUCT_VIEW 0.5 (10/day), ADD_TO_CART 3 (5/day), PURCHASE 10 (per ₹1,000), REVIEW 20, … |
+| Dead rules (note) | Inspect PROFILE_COMPLETE / REFERRAL_SIGNUP / REFERRAL_PURCHASE | Editable here but **never awarded** — no emitter wires them (see Known limitations). Don't expect a score change from these in testing. |
 | Edit rule | Edit PRODUCT_VIEW points to 1 → Save | "Scoring rule saved"; audit `LOYALTY_EVENT_RULE_UPDATED`. |
 | Daily-cap note | Read the page hint | PURCHASE is per ₹1,000; non-purchase actions share a combined daily/monthly cap (set in Settings). |
 
@@ -80,17 +84,30 @@ quick DB query (appendix) for things the UI can't show directly (pending coins, 
 | Edit ladder | Edit WELCOME → change expiry / rungs JSON → Save | "Trigger saved"; audit `LOYALTY_TRIGGER_UPDATED`. |
 | Bad JSON | Put invalid JSON in the ladder | **Save disabled** + "Not valid JSON." inline. |
 | Disable a trigger | Toggle WELCOME off | New signups get **no** welcome code (see §10). |
+| Which triggers auto-fire | Read the grid | Only **WELCOME, WIN_BACK, BIRTHDAY, SURPRISE** have firing wiring (see §10/§12). **ABANDONED_CART, SLOW_STOCK, TIER_UP, MILESTONE** are config-only in this build — editable/toggleable but never issue a code (see Known limitations). **FESTIVE** is the trigger stamped on admin-created public codes (§6), not an automatic trigger. |
 
 ## 6. Codes / offers (`/admin/loyalty/codes`)
 
 | Feature name | Action performed | Expected outcome |
 |---|---|---|
 | Codes grid | Open Codes tab | Grid of offers incl. demo codes; columns Code, Trigger, Type, Value, **Scope** (Public / customer email), Used (n/max), Status, Expires. |
-| Create public code | **New code** → leave user blank, type **Percentage**, value 15, min spend 500, max uses 100 → Save | 201; row added as a **Public** FESTIVE code; audit `LOYALTY_OFFER_CREATED` (records approving staff id). |
-| Create personal code | **New code** → user id = a customer's id → Save | Created as a **MANUAL** personal code scoped to that user. |
+| Category selector | **New code** → look next to **Type** | A **Category** dropdown offers *Festive campaign / Manual / Milestone / Tier-up / Surprise* (defaults to Festive campaign). It sets the code's reporting **Trigger** label only; the engine-issued triggers (WELCOME, WIN_BACK, BIRTHDAY, …) are intentionally **not** listed. |
+| Customer picker | **New code** → open the **Customer** field | A searchable dropdown (not a numeric id). Typing filters the user list by **name or email**; a **"Public offer (no user)"** entry sits at the top. Leaving it on that entry = a public code; picking a customer = a personal code scoped to them. |
+| Create public code | **New code** → leave Customer on **Public offer (no user)**, Category **Festive campaign**, type **Percentage**, value 15, min spend 500, max uses 100 → Save | 201; row added as a **Public** FESTIVE code; audit `LOYALTY_OFFER_CREATED` (records approving staff id + trigger). |
+| Pick a category | **New code** → set Category to **Milestone** (or Tier-up/Surprise) → Save | The new row's **Trigger** column shows the chosen category; it also groups under that bucket in the Overview "Codes by trigger" chart (§9). |
+| Create personal code | **New code** → **Customer** → search a customer by name/email and select them (leave Category default) → Save | Created as a **MANUAL** personal code scoped to that user (the selected id is sent to the API). (Picking a category overrides the label.) |
+| Blocked category (API) | POST a create body with `trigger` = `WELCOME`/`WIN_BACK`/`BIRTHDAY`/`ABANDONED_CART`/`SLOW_STOCK` | **400** — engine-only triggers can't be set on a hand-created code. |
+| Schedule window | **New code** → set **Starts** and **Expires** (both date **and time**, e.g. start today 18:00, expire tomorrow 18:00) → Save | Code saved with that active window. Blank **Starts** = active now; blank **Expires** = never expires. Lets you run a 1-day / fixed-period code. |
+| Not active yet | Create a code with **Starts** in the future, then try to apply it at checkout before that time | Red "This code isn't active yet." (validation checks `startsAt`). After the start time it validates normally (until Expires). |
+| Form validation | In **New code** (or **Edit**): set **Starts** after **Expires**; or a 0/negative/blank **Value** for a %/₹/coins code; or a **Percentage** > 100; or a negative Min spend / Max discount; or Max uses < 1 | A red **error bar at the top of the form** lists every problem (e.g. "Expires must be after Starts.", "Enter a value greater than 0.", "Percentage can't exceed 100."), each offending **field is outlined in red**, and **Save** is **disabled** until all are fixed. (No messages below fields — keeps alignment.) The two date pickers also constrain each other (`min`/`max`). |
 | Auto code | Create without typing a code | A look-alike-safe code is generated (e.g. `SALE-7K4QXR`; no 0/O/1/I/L). |
 | Duplicate | Create with an existing code | **409** conflict. |
+| Edit code | Row → **Edit** → change e.g. value / min spend / category / Starts / Expires → **Save changes** | Panel opens pre-filled; **Code** and **Customer** are shown read-only (immutable); on save the grid row updates; toast "Code updated"; audit `LOYALTY_OFFER_UPDATED`. |
+| Edit guard: maxUses | Edit a code and set **Max uses** below its current Used count | **400** — "maxUses can't be below the N use(s) already redeemed". |
+| Edit engine code | Row → **Edit** on an engine-issued code (e.g. a WELCOME code) | Its category shows as "WELCOME (engine)" and stays put on save; you can edit the other fields. Switching the category is only allowed to an admin category (FESTIVE/MANUAL/MILESTONE/TIER_UP/SURPRISE). |
 | Revoke | Row → **Revoke** → confirm | Status → REVOKED; audit `LOYALTY_OFFER_REVOKED`; the code no longer validates at checkout. |
+| Delete (unused) | Row → **Delete** → confirm | Code permanently removed from the grid; toast "Code deleted"; audit `LOYALTY_OFFER_DELETED`. The **Delete** action only appears on codes with **Used = 0**. |
+| Delete blocked (used) | Find a redeemed code (Used ≥ 1) | No **Delete** action in its row menu (only Edit/Revoke). A direct `DELETE` API call returns **409** — revoke instead (keeps the redemption/budget history). |
 | Bulk upload | **Bulk upload** a CSV `code,type,value,minSpend,maxDiscount,maxUses,campaignId,expiresAt` | `BulkUploadResult` summary; duplicates skipped; bad `type` rows reported; audit `LOYALTY_OFFER_BULK_IMPORT`. |
 
 ## 7. Budget (`/admin/loyalty/settings` → Monthly discount budget)
@@ -128,7 +145,7 @@ quick DB query (appendix) for things the UI can't show directly (pending coins, 
 | Feature name | Action performed | Expected outcome |
 |---|---|---|
 | Rewards card | Open `/account` | **Rewards** card: tier badge, Loyalty score, Reward coins ("a discount, not cash"), progress-to-next-tier, consent toggle, Rewards-terms link. |
-| Signup points | Brand-new user opens `/account` for the first time | Score shows **50** (one-time SIGNUP), tier Bronze. (Awarded on first `/me`.) |
+| Signup points | Brand-new user opens `/account` for the first time | Score shows **50** (one-time SIGNUP), tier Bronze. (Awarded on first `/me`.) **Note:** PROFILE_COMPLETE (30) is **not** awarded even with name/phone filled — it's a dead rule, so a fresh user stays at 50, not 80 (see Known limitations). |
 | Progress nudge | View a customer below a threshold | "You're N points from <Tier>"; within 10% it reads "almost there!". |
 | Consent off → no tracking | Leave **Personalised rewards** off; view a product 10s | No PRODUCT_VIEW points (beacons are ignored without consent); score unchanged. |
 | Consent on | Turn **Personalised rewards** on | Toast "Preference saved"; a DAILY_VISIT beacon fires (≤1/day). |
@@ -137,6 +154,7 @@ quick DB query (appendix) for things the UI can't show directly (pending coins, 
 | Per-type cap | Add to cart >5 times in a day | Only the first 5 earn (per-type daily cap). |
 | Combined cap | Rack up many farmable actions in a day | Non-purchase points stop at 30/day total (one-time events like signup are exempt). |
 | Review points | Buy + review a product (first review of it) | REVIEW points (20) added once per product; editing the review does **not** re-earn. |
+| Purchase score points (deferred) | Place + pay an order, then reopen `/account` right away | Score does **not** move yet. The PURCHASE event is written **PENDING** and only counts toward the score after the return window — the live recompute sums **CONFIRMED** events only. Run `run-nightly` after the window (or lower `returnWindowDays`) and the score rises. (Same deferral as the earned coins in §11.) |
 | Nightly recompute/decay | `POST /api/v1/admin/loyalty/run-nightly` | Scores recomputed with 90-day half-life decay; tiers move up instantly, down only after a 30-day grace. |
 | API | `GET /api/v1/loyalty/me` (customer token) | `{ tier, tierName, score, coinBalance, nextTier, pointsToNextTier, nearNextTier, trackingConsent, discountsEnabled }`. |
 | Activity guard | `POST /api/v1/loyalty/activity {"type":"PURCHASE"}` | **400** — high-value events can't be self-reported (only VIEW/WISHLIST/ADD_TO_CART/DAILY_VISIT/SHARE_CLICK). |
@@ -253,7 +271,40 @@ Backend unit/integration tests (run `cd backend && mvn test` → 31 pass):
 
 ## Known limitations (by design, this build)
 
-- **Slow-stock** and **abandoned-cart** triggers are not wired (abandoned-cart needs server-side cart persistence).
+- **Purchase rewards are deferred, not instant.** Paying an order earns both reward **coins** and **PURCHASE score points**, but both are written **PENDING** and only take effect after the return window (`returnWindowDays`) when the nightly job confirms them — so right after checkout neither the spendable coin balance nor the loyalty score changes. (By design: no earn-and-spend before a return is possible.) Small orders can earn nothing — a sub-₹100 total floors to 0 coins, and a tier with `coinsPer100 = 0` earns none.
+- **Some seeded scoring rules are never awarded ("dead" rules).** `PROFILE_COMPLETE` (30), `REFERRAL_SIGNUP` (50) and `REFERRAL_PURCHASE` (200) appear as editable rows in the §4 Scoring grid, but **no code path records them** — there is no profile-completion hook and no referral capture. So of the one-time events only **SIGNUP** actually fires (verified: a brand-new user with name + phone set scores exactly **50, not 80**). Editing their points in the grid has no effect until the emitters are wired. See also the unwired triggers above.
+- **Slow-stock**, **abandoned-cart**, **tier-up**, and **milestone** triggers are not wired — no domain code fires them, so toggling them On in the grid issues nothing (abandoned-cart also needs server-side cart persistence). Only **WELCOME** (first `/account` load), **WIN_BACK** and **BIRTHDAY** (nightly job), and **SURPRISE** (per paid order) fire automatically; **FESTIVE** is the label on admin-created public codes, not an auto-trigger.
 - **True margin-floor** isn't enforced (foundation has no cost-of-goods) — discounts are capped by the 20% ceiling + per-rung max instead.
 - The **coin toggle** only appears on the **Delivery** checkout path (where a quote is fetched); the discount-code input works on both.
 - Holdout/revenue metrics read **0** until there are real paid orders (the demo seed has none).
+
+---
+
+## Test-run findings log
+
+### Run — 2026-11-01 (API + read-only DB; §10 and §12 active, §11/§13/§14 state-verified)
+
+**Environment:** app at `localhost:8080`, new user `loyalty.test.…@example.com` (userId 3) registered + email-verified via mailpit.
+
+**§10 Loyalty Score engine — PASS (customer-side).** signup=50/Bronze; PURCHASE self-report→400; consent-off beacon ignored (score stayed 50); consent-on; PRODUCT_VIEW +0.5; ADD_TO_CART +3; per-type cap (6 ADD_TO_CART → only 5 counted); combined daily cap (50 mixed beacons → capped exactly at 80 = 50 signup + 30); `/me` shape matches; coin history empty. Edge probes all green: non-beacon/garbage/empty/null type→400, no/garbage token→403, consent off→on round-trips, SIGNUP idempotent across repeated `/me`, over-cap writes nothing (no negative events — guard `points.signum()<=0`).
+
+**§12 Discount offer engine (validation) — PASS.** Via `POST /api/v1/loyalty/offers/validate` as user 3 against seeded demo codes:
+- `DIWALI10` @1500 → **₹150 off** (10%); @5000 → **₹300** (maxDiscount cap applied); @500 → "Spend ₹999…" (min-spend).
+- `WB-7K4QXR` (personal to another user) → "belongs to another account."
+- `WEL-5H8KQ2` (USED) → "no longer active."; unknown code → "isn't valid."; blank → "Enter a code."; lowercase `diwali10` → accepted (case-insensitive).
+
+**§11 / §13 / §14 — state-verified from prior real orders (read-only DB):**
+- §11: `coin_ledger_entry` holds **CONFIRMED (15, 1875 coins) + PENDING (4, 37 coins)** → the pending→confirmed deferral is real.
+- §12/§13: `EAT-DIWALI` redemption of **₹200** → `discount_budget` 2026-11 `spent_to_date = ₹200` → redemption-commit **and** budget spend-tracking both work.
+- §14: all `LOYALTY_*` audit actions present (incl. `LOYALTY_OFFER_UPDATED`/`DELETED`); details show only `code=/order=/amount=/trigger=` — **no PII/secrets**.
+
+**Edge cases found (this run):**
+- **§12 validate is preview-only / idempotent** — validating `DIWALI10` repeatedly does **not** consume uses (`used_count` stayed 137/500); uses only increment on an actual order redemption commit. Good separation of validate vs redeem.
+- **§12 maxDiscount cap** correctly clamps a % offer (5000×10% = 500 → capped to 300).
+- **§12 codes are case-insensitive** (lowercased input is uppercased server-side).
+- **§12 distinct messages** for blank vs unknown vs wrong-owner vs used/expired — no information leak about which codes exist beyond "isn't valid".
+
+**⚠ Blocked / NOT exercised this run (need admin or a full checkout):**
+- **Admin access is blocked.** The seeded `owner@yourbusiness.com` login returns 401 — **not** a stale DB (demo data is intact), but `token_version=1` shows the admin password was **changed from the default**, so `changeme123` no longer works. Overwriting the password hash was (correctly) refused by the sandbox, and a `down -v` reset was avoided to protect local state.
+- Consequently un-run: **§11** active earn/redeem/reverse/expiry (need a fresh paid order + `run-nightly`), **§13** pacing (pace-factor shrink, budget-exhaustion block — need admin + offer trigger), **§15** kill-switch end-to-end (need admin to toggle `discountsEnabled`), **§12** trigger issuance (welcome/win-back/birthday/surprise) + live redemption-commit, and anything via `/admin/**` (`run-nightly`, metrics, `/admin/logs`).
+- These paths are covered by backend unit/integration tests (Appendix C: `CoinServiceTest`, `OfferServiceTest`) and partially corroborated by the DB state above, but were **not** actively re-run here.
