@@ -3,7 +3,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Image, Package, CalendarDays, Sparkles, ShoppingCart, Workflow, Plug, Store, Star,
-  MessageSquare, LifeBuoy, Users, ScrollText, BarChart3, type LucideIcon,
+  MessageSquare, LifeBuoy, Users, ScrollText, BadgePercent, BarChart3, type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ const NAV: { to: string; label: string; icon: LucideIcon; testId: string }[] = [
   { to: '/admin/connectors', label: 'Connectors', icon: Plug, testId: 'admin-nav-connectors' },
   { to: '/admin/branches', label: 'Branches', icon: Store, testId: 'admin-nav-branches' },
   { to: '/admin/reviews', label: 'Reviews', icon: Star, testId: 'admin-nav-reviews' },
+  { to: '/admin/loyalty', label: 'Loyalty & Discounts', icon: BadgePercent, testId: 'admin-nav-loyalty' },
   { to: '/admin/feedback', label: 'Feedback', icon: MessageSquare, testId: 'admin-nav-feedback' },
   { to: '/admin/support', label: 'Support', icon: LifeBuoy, testId: 'admin-nav-support' },
   { to: '/admin/users', label: 'Users', icon: Users, testId: 'admin-nav-users' },

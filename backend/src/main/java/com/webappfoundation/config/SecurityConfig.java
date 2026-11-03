@@ -65,6 +65,8 @@ public class SecurityConfig {
                         // so it stays public; opening/verifying a payment requires an authenticated user.
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
                         .requestMatchers("/api/v1/payments/**").authenticated()
+                        // Customer loyalty (my score/coins, tracking consent, activity beacons) is per-user.
+                        .requestMatchers("/api/v1/loyalty/**").authenticated()
                         .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session

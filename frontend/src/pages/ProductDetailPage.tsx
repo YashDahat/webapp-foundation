@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useProductBySlug } from '@/hooks/productHooks';
+import { loyaltyService } from '@/services/loyaltyService';
 import { useCart } from '@/cart';
 import { useBranch } from '@/context/BranchContext';
 import type { ProductVariantDto } from '@/types/product';
@@ -31,6 +32,17 @@ export default function ProductDetailPage() {
     const imgs = product.images && product.images.length > 0 ? product.images : [];
     return product.imageUrl ? [product.imageUrl, ...imgs.filter((i) => i !== product.imageUrl)] : imgs;
   }, [product]);
+
+  // Loyalty: a genuine product view counts only after 10s of dwell (anti-bot). Fire-and-forget beacon.
+  const productId = product?.id;
+  useEffect(() => {
+    if (productId == null) return;
+    const timer = setTimeout(
+      () => loyaltyService.recordActivity({ type: 'PRODUCT_VIEW', itemType: 'PRODUCT', itemId: productId }),
+      10_000,
+    );
+    return () => clearTimeout(timer);
+  }, [productId]);
 
   if (isLoading) {
     return <p className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground">Loading…</p>;
@@ -89,6 +101,7 @@ export default function ProductDetailPage() {
       },
     });
     toast.success('Added to cart');
+    loyaltyService.recordActivity({ type: 'ADD_TO_CART', itemType: 'PRODUCT', itemId: product.id });
   };
 
   return (

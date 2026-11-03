@@ -572,6 +572,63 @@ import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';              
 
 ---
 
+## Discount & Loyalty — `@/services/loyaltyService`, `@/hooks/loyaltyHooks`
+
+The admin control panel for the Discount & Loyalty engine ships PREBUILT as a tabbed section at `/admin/loyalty`
+(one admin nav entry → Overview / Customers / Codes / Triggers / Tiers / Scoring / Settings). The Settings tab
+carries the client-controllable **master kill switch** (`discountsEnabled`): off = scoring + tiers keep running
+but no codes/offers/coin-redemption. Generated sites reuse these hooks/services; they do NOT rebuild the section.
+
+```ts
+import { loyaltyService } from '@/services/loyaltyService';
+import {
+  useLoyaltySettings, useUpdateLoyaltySettings,
+  useLoyaltyTiers, useUpdateLoyaltyTier,
+  useLoyaltyEventRules, useUpdateLoyaltyEventRule,
+  useLoyaltyTriggers, useUpdateLoyaltyTrigger,
+  useDiscountBudgets, useUpsertDiscountBudget,
+  useLoyaltyCustomers,
+  useLoyaltyOffers, useCreateOffer, useRevokeOffer,
+} from '@/hooks/loyaltyHooks';
+import type {
+  Tier, LoyaltyEventType, OfferTrigger, OfferType, OfferStatus,
+  LoyaltySettingsDto, LoyaltyTierDto, LoyaltyEventRuleDto, LoyaltyTriggerConfigDto,
+  DiscountBudgetDto, OfferDto, CreateOfferRequest, LoyaltyProfileDto,
+} from '@/types/loyalty';
+// LoyaltySettingsDto.discountsEnabled is the master kill switch. Offers bulk-upload: loyaltyService.bulkUploadOffers(file).
+import LoyaltyAdminLayout from '@/components/admin/LoyaltyAdminLayout';   // the /admin/loyalty tabbed shell (foundation-owned)
+```
+
+Customer-facing (my loyalty) ships PREBUILT: `<LoyaltyCard/>` is mounted on the account page (tier, score,
+progress-to-next-tier, coin balance, DPDP consent toggle). Behavioural beacons are fire-and-forget and only
+count with consent — `PRODUCT_VIEW` (10s dwell) + `ADD_TO_CART` are already wired on the product page.
+
+```ts
+import { useLoyaltyMe, useSetTrackingConsent, useCoinHistory } from '@/hooks/loyaltyHooks';
+import type { LoyaltyMeDto, CoinLedgerDto, ActivityType, RecordActivityRequest } from '@/types/loyalty';
+import { loyaltyService } from '@/services/loyaltyService';
+loyaltyService.recordActivity({ type: 'ADD_TO_CART', itemType: 'PRODUCT', itemId });   // silent beacon (bypasses apiClient toasts)
+import LoyaltyCard from '@/components/loyalty/LoyaltyCard';                              // account-page rewards panel + coin history (foundation-owned)
+// Coins at checkout: the fenced CheckoutPage surfaces the "loyalty.coins" quote option as a "use coins" toggle and
+// sends connectorSelections["loyalty.coins"] = <coins>. LoyaltyMeDto.coinBalance / discountsEnabled drive the UI.
+// Discount codes at checkout: CheckoutPage has a "have a code?" input → loyaltyService.validateOffer(code, subtotal)
+// → on valid, sends connectorSelections["loyalty.discount"] = <code> (re-validated + committed server-side).
+import type { OfferValidationResult } from '@/types/loyalty';
+loyaltyService.validateOffer(code, subtotal);   // → OfferValidationResult { valid; code; amount; message }
+```
+
+Admin metrics dashboard (Phase 4) ships PREBUILT at `/admin/loyalty` (Overview tab, charts via **recharts**): discount % of
+gross vs budget, members-vs-holdout repeat rate + incremental revenue, tier mix, codes by trigger, coin liability. Compliance:
+a public `/loyalty-terms` page (coins are a discount, not cash; real expiry only) is linked from the account rewards card.
+
+```ts
+import { useLoyaltyMetrics } from '@/hooks/loyaltyHooks';
+import type { LoyaltyMetricsDto } from '@/types/loyalty';   // members/holdout, budget, coinLiability, tierMix, redemptionByTrigger, holdoutComparison
+import LoyaltyTermsPage from '@/pages/LoyaltyTermsPage';     // public route /loyalty-terms (foundation-owned)
+```
+
+---
+
 ## Pinned-library gotchas
 
 - **`react-day-picker` is v10** (used by the shadcn `<Calendar>` at `@/components/ui/calendar`).
