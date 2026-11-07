@@ -31,8 +31,12 @@ import java.util.Map;
 @Service
 public class EventService {
 
-    /** Events run their own lifecycle by default; a blank workflowCode binds to the seeded "events" workflow. */
-    private static final String DEFAULT_WORKFLOW = "events";
+    /**
+     * Blank workflowCode binds events to the foundation's neutral {@code default} workflow. An events-centric
+     * business should generate its own {@code events} lifecycle (REGISTERED → CONFIRMED(onPaidEntry) → ATTENDED)
+     * via {@code WorkflowService.defineWorkflow(...)} and point events at it with this code.
+     */
+    private static final String DEFAULT_WORKFLOW = WorkflowService.DEFAULT_CODE;
 
     private final EventRepository eventRepository;
     private final BranchRepository branchRepository;
@@ -339,7 +343,7 @@ public class EventService {
         return t.isEmpty() ? null : t;
     }
 
-    /** Blank CSV workflowCode → the default "events" workflow. */
+    /** Blank CSV workflowCode → the foundation default workflow (a dedicated events workflow is generated per business). */
     private static String resolveWorkflow(String raw) {
         String t = emptyToNull(raw);
         return t == null ? DEFAULT_WORKFLOW : t;
