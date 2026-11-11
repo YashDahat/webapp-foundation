@@ -98,7 +98,7 @@ public class Event {
     @Builder.Default
     private boolean active = true;
 
-    /** Order lifecycle this event follows (default = the "events" workflow). */
+    /** Order lifecycle this event follows (blank = the foundation default workflow). */
     private String workflowCode;
 
     @Column(nullable = false)

@@ -376,15 +376,15 @@ ticketing runs on the normal order spine: `EventCatalogResolver` maps it to `Cat
 `EventInventoryProvider` tracks seats via `InventoryService` (no new engine). Capacity is a shared pool
 (`capacity` null = unlimited) or per `EventTier` (GA/VIP/Early-bird); sales stop at `salesCloseAt`
 (defaults to `startsAt`). A free (₹0) event signs up directly through the ₹0 order path; paid/tiered events
-go through cart → checkout. Bound to the seeded **`events`** workflow (`REGISTERED → CONFIRMED(onPaidEntry)
-→ ATTENDED` + `CANCELLED`).
+go through cart → checkout. Binds to the **`default`** workflow unless the business generates a dedicated
+`events` workflow (`REGISTERED → CONFIRMED(onPaidEntry) → ATTENDED` + `CANCELLED`) and points events at it.
 
 ```java
 class Event { Long id; String name; String slug; String description; BigDecimal price;
   Instant startsAt; Instant endsAt; Instant salesCloseAt; Long venueBranchId;
   Integer capacity; Integer reserved; List<EventTier> tiers;                 // capacity null = unlimited; tiered = seats per tier
   String imageUrl; List<String> images; List<String> features; String category;
-  boolean active; String workflowCode; Instant createdAt; Instant updatedAt; }  // workflowCode default "events"
+  boolean active; String workflowCode; Instant createdAt; Instant updatedAt; }  // blank workflowCode → "default"
 class EventTier { Long id; String label; String sku; BigDecimal price; Integer stock; Integer reserved; }  // price null → inherit event price
 class EventDto  { /* detail/admin shape + computed available, seatsLeft, onSale, soldOut, venueName; tiers each with computed available */ }
 class EventTierDto { Long id; String label; String sku; BigDecimal price; Integer stock; Integer reserved; Integer available; }
@@ -492,7 +492,7 @@ it — all editable at `/admin/workflow`, no engine edits. Attach external servi
 notifications) as **connector beans**; never call a third-party API inline from domain code.
 
 ```java
-class Workflow      { Long id; String code; String label; boolean isDefault; String staffRole; }   // staffRole = board label (e.g. "Rider"); seeded: "default","food","retail","services"
+class Workflow      { Long id; String code; String label; boolean isDefault; String staffRole; }   // staffRole = board label (e.g. "Rider"); seeded: "default" ONLY — business workflows are generated per project (see CLAUDE.md "Generating the business workflow")
 class WorkflowStage { Long id; String workflowCode; String code; String label; int ordinal;
   boolean initial; boolean onPaidEntry; boolean terminal;
   boolean cancellable; RefundPolicy refundPolicy; Integer refundPercent;
@@ -505,7 +505,11 @@ enum TriggerType { SYSTEM, PAYMENT, WEBHOOK, ADMIN, RETRY }
 
 class WorkflowEngine { boolean advance(Order order, String toStageCode, TriggerType trigger); }  // idempotent for SYSTEM/PAYMENT/WEBHOOK
 class StageActionDispatcher { /* @Async @TransactionalEventListener(AFTER_COMMIT): fans a stage's enabled bindings to connectors; dedupes SUCCESS via WorkflowExecution */ }
-class WorkflowService { /* seeds default+food(+retail+services), enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow() */ }
+class WorkflowService { /* seeds the neutral "default" workflow, enforces invariants, stage lookups, admin getWorkflows()/replaceWorkflow(), defineWorkflow(WorkflowDto) */ }
+// defineWorkflow(WorkflowDto): the sanctioned path for GENERATED per-business workflow seeders (never write the
+//   workflow/stage/binding tables directly). Idempotent — no-ops if the code already exists (safe every boot,
+//   preserves admin edits); else inserts the workflow + stages + bindings and re-checks invariants. isDefault=true
+//   makes it the new order default (clears the previous). See CLAUDE.md "Generating the business workflow".
 // replaceWorkflow(code, WorkflowDto): WorkflowDto now carries staffRole + per-stage targetMinutes, and an optional
 //   stageMapping (WorkflowStageMappingRequest{ Map<String,String> mapping }). Removing a stage CODE that live
 //   (non-terminal) orders occupy REQUIRES mapping[removedCode]=survivingCode or the save is rejected 409; the

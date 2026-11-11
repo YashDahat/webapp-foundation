@@ -106,7 +106,9 @@ cards). Generated code inherits them; do not reinvent or bypass:
   a DB-configured **workflow** of stages, each with 0..N **connector actions** — never hardcode lifecycle
   steps or write your own order/checkout persistence. Orders carry a `fulfillmentType` (delivery / self-pickup;
   pickup may be `PAY_AT_COUNTER`) and run through a selected **branch**. Cancellation/refund is a property of
-  the current workflow **stage** (`cancellable` + `refundPolicy`) — never add an ad-hoc cancel path.
+  the current workflow **stage** (`cancellable` + `refundPolicy`) — never add an ad-hoc cancel path. The
+  foundation seeds only the neutral **`default`** workflow; **you generate the business's real lifecycle** —
+  see *"Generating the business workflow"* below.
 - **Attach external services via connectors.** Delivery, tax, loyalty, refunds, notifications, … are
   **connector beans** (`ActionConnector`/`QuoteConnector`/`WebhookConnector`) bound to a stage at
   `/admin/workflow`; never call a third-party API inline from domain code. Built-in email is the `email`
@@ -116,3 +118,77 @@ cards). Generated code inherits them; do not reinvent or bypass:
   post-checkout **feedback** is 1–5 stars + optional comment, one per order. Never reimplement `BranchService`,
   `AddressService`, `FeedbackService`, or re-declare `OrderService`, `WorkflowEngine`, `StageActionDispatcher`,
   `ConnectorRegistry`/the connector SPIs, `CatalogService`, or `InventoryService`.
+
+## Generating the business workflow
+
+The order **engine** is fenced spine (`WorkflowEngine`, `StageActionDispatcher`, `ConnectorRegistry`, the
+connector SPIs, `WorkflowService`) and the foundation seeds **only** a neutral `default` workflow
+(`PLACED → CONFIRMED(onPaidEntry) → DELIVERED` + a terminal `CANCELLED`) so orders work before any
+customization. The actual lifecycle is **data**, and defining it for this business is **your** job — not a
+foundation preset. Customize it; never edit the engine.
+
+**1 — Design the stages from the business requirement.** List the real fulfilment steps (e.g. a cloud
+kitchen: `PLACED → CONFIRMED → PREPARING → OUT_FOR_DELIVERY → DELIVERED`; a clinic:
+`REQUESTED → SCHEDULED → IN_PROGRESS → COMPLETED`). For each stage set:
+- `initial` — exactly **one** stage (where a freshly placed order starts).
+- `onPaidEntry` — **at most one** stage the order jumps to when payment is captured (free ₹0 orders jump here too).
+- `terminal` — end stages; a terminal **`CANCELLED`** stage is **required** (keep that exact code).
+- `cancellable` + `refundPolicy` (`FULL`/`PARTIAL`/`NONE`) + `refundPercent` — the cancel/refund right *at* that
+  stage (tighten as fulfilment progresses, e.g. `FULL → PARTIAL(50) → NONE`). This is the only cancel path.
+- `targetMinutes` — the order-board "stuck" SLA (time-in-stage past target); omit on terminal stages.
+
+These invariants are enforced by `WorkflowService.validateInvariants` (one initial, ≤1 onPaidEntry, a terminal
+`CANCELLED`) — a bad definition fails fast on boot.
+
+**2 — Ship it as a generated (non-fenced) boot seeder** that calls the fenced
+`WorkflowService.defineWorkflow(WorkflowDto)` — the **only** sanctioned way to create a workflow from code.
+Never write the `workflow` / `workflow_stage` / `workflow_binding` tables yourself. `defineWorkflow` is
+**idempotent** (no-ops if the code already exists), so it's safe on every boot and won't clobber admin edits
+made at `/admin/workflow`. Set `isDefault(true)` if this workflow should replace `default` as the order default.
+Run **after** foundation seeding with `@Order` > 0.
+
+```java
+@Component
+@Order(10) // after WorkflowService.seedDefaults (@Order 0) on ApplicationReadyEvent
+public class KitchenWorkflowSeeder {
+    private final WorkflowService workflowService;
+    public KitchenWorkflowSeeder(WorkflowService workflowService) { this.workflowService = workflowService; }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void seed() {
+        workflowService.defineWorkflow(WorkflowDto.builder()
+            .code("kitchen").label("Kitchen delivery").staffRole("Rider").isDefault(true)
+            .stages(List.of(
+                stage("PLACED",           "Placed",           b -> b.initial(true).cancellable(true).refundPolicy(RefundPolicy.FULL).targetMinutes(5)),
+                stage("CONFIRMED",        "Confirmed",        b -> b.onPaidEntry(true).cancellable(true).refundPolicy(RefundPolicy.FULL).targetMinutes(10)
+                        .bindings(List.of(
+                            binding(EmailConnector.ID, EmailConnector.EMAIL_CUSTOMER),
+                            binding(EmailConnector.ID, EmailConnector.EMAIL_STORE)))),
+                stage("PREPARING",        "Preparing",        b -> b.cancellable(true).refundPolicy(RefundPolicy.PARTIAL).refundPercent(50).targetMinutes(20)),
+                stage("OUT_FOR_DELIVERY", "Out for delivery", b -> b.refundPolicy(RefundPolicy.NONE).targetMinutes(30)
+                        .bindings(List.of(binding(DemoDeliveryConnector.ID, DemoDeliveryConnector.DELIVERY_INITIATE)))),
+                stage("DELIVERED",        "Delivered",        b -> b.terminal(true).refundPolicy(RefundPolicy.NONE)),
+                stage("CANCELLED",        "Cancelled",        b -> b.terminal(true).refundPolicy(RefundPolicy.NONE)
+                        .bindings(List.of(binding(DemoRefundConnector.ID, DemoRefundConnector.REFUND_ISSUE))))))
+            .build());
+    }
+    // small helpers (stage(..), binding(..)) build the StageDto/BindingDto; ordinal is derived from list order.
+}
+```
+
+**3 — Attach connectors to stages.** A binding fires a connector **action** when an order enters that stage.
+Reuse shipped connectors — `EmailConnector` (`email.customer` / `email.store`), `DemoDeliveryConnector`
+(`delivery.initiate`), `DemoRefundConnector` (`refund.issue`) — and the loyalty connectors are auto-bound onto
+every `onPaidEntry` and `CANCELLED` stage by `LoyaltyWorkflowBindingInitializer`, so you don't bind those by
+hand. For a **new external service** (a real courier, tax engine, SMS, payment refund, …) add **ONE**
+`@Component` implementing the relevant SPI — `ActionConnector` (on stage entry), `QuoteConnector`
+(checkout-time quote), and/or `WebhookConnector` (inbound callback that may advance the stage) — declare its
+`actions()`, and **never call the third-party API inline** from domain code. It then appears automatically in
+`/admin/workflow` and `/admin/connectors`.
+
+**4 — Point sellables at the workflow.** Set `Product.workflowCode` / `Event.workflowCode` (or the
+`workflowCode` column on their bulk-upload sheet) to your workflow's `code`; a blank code falls back to the
+order **default** workflow. An events business should generate an `events` workflow and point its events at it.
+
+Admins can re-order stages, retune SLAs/refund policy, and enable/disable or re-order bindings live at
+`/admin/workflow` — your seeder sets the sensible starting point, not a frozen one.
