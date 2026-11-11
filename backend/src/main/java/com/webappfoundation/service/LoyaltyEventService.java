@@ -43,16 +43,18 @@ public class LoyaltyEventService {
     private final LoyaltyProfileService profileService;
     private final LoyaltySettingsService settingsService;
     private final OfferService offerService;
+    private final CoinService coinService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public LoyaltyEventService(LoyaltyEventRepository eventRepository, LoyaltyEventRuleRepository ruleRepository,
                                LoyaltyProfileService profileService, LoyaltySettingsService settingsService,
-                               OfferService offerService) {
+                               OfferService offerService, CoinService coinService) {
         this.eventRepository = eventRepository;
         this.ruleRepository = ruleRepository;
         this.profileService = profileService;
         this.settingsService = settingsService;
         this.offerService = offerService;
+        this.coinService = coinService;
     }
 
     /** Materialise the user's profile (assigning holdout once) and award the one-time SIGNUP points. */
@@ -158,6 +160,12 @@ public class LoyaltyEventService {
                 .userId(userId).type(type).points(points).status(status)
                 .orderId(orderId).metaJson(toJson(meta)).createdAt(now).confirmAt(confirmAt)
                 .build());
+
+        // Engagement actions flagged earnsCoins also pay redeemable coins (= points awarded). PURCHASE coins
+        // are paid separately by CoinService.earnForOrder on the paid stage.
+        if (rule.isEarnsCoins() && type != LoyaltyEventType.PURCHASE) {
+            coinService.earnForAction(userId, points, type.name().toLowerCase());
+        }
     }
 
     /** The farmable repeatable event types — those configured with a per-day cap — that share the combined caps. */

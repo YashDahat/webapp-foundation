@@ -3,6 +3,7 @@ package com.webappfoundation.service;
 import com.webappfoundation.dto.CreateFeedbackRequest;
 import com.webappfoundation.dto.OrderFeedbackDto;
 import com.webappfoundation.exception.ResourceNotFoundException;
+import com.webappfoundation.model.LoyaltyEventType;
 import com.webappfoundation.model.Order;
 import com.webappfoundation.model.OrderFeedback;
 import com.webappfoundation.repository.OrderFeedbackRepository;
@@ -28,12 +29,14 @@ public class FeedbackService {
     private final OrderFeedbackRepository feedbackRepository;
     private final OrderRepository orderRepository;
     private final AuditService auditService;
+    private final LoyaltyEventService loyaltyEventService;
 
     public FeedbackService(OrderFeedbackRepository feedbackRepository, OrderRepository orderRepository,
-                           AuditService auditService) {
+                           AuditService auditService, LoyaltyEventService loyaltyEventService) {
         this.feedbackRepository = feedbackRepository;
         this.orderRepository = orderRepository;
         this.auditService = auditService;
+        this.loyaltyEventService = loyaltyEventService;
     }
 
     @Transactional
@@ -58,6 +61,8 @@ public class FeedbackService {
                 .build());
         auditService.record(AuditActions.FEEDBACK_SUBMITTED, AuditActions.SUCCESS, "ORDER", String.valueOf(orderId),
                 "rating=" + saved.getRating());
+        // Reward the feedback (score points + coins per the FEEDBACK rule). Best-effort, never throws.
+        loyaltyEventService.record(userId, LoyaltyEventType.FEEDBACK, orderId, Map.of("rating", saved.getRating()));
         return toDto(saved, order.getOrderNumber());
     }
 

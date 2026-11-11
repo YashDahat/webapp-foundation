@@ -130,6 +130,26 @@ public class CoinService {
         }
     }
 
+    /**
+     * Credit coins for an engagement action (review, feedback, suggestion, referral …) whose scoring rule has
+     * {@code earnsCoins}. Written CONFIRMED (spendable at once) with the normal expiry. Returns coins credited.
+     */
+    @Transactional
+    public BigDecimal earnForAction(Integer userId, BigDecimal coins, String reason) {
+        if (userId == null || coins == null) return BigDecimal.ZERO;
+        BigDecimal whole = coins.setScale(0, RoundingMode.DOWN);
+        if (whole.signum() <= 0) return BigDecimal.ZERO;
+        profileService.getOrCreate(userId);
+        Instant now = Instant.now();
+        coinRepository.save(CoinLedgerEntry.builder()
+                .userId(userId).coins(whole).reason(reason)
+                .status(CoinStatus.CONFIRMED).earnedAt(now)
+                .expiresAt(now.plus(30L * settingsService.get().getCoinExpiryMonths(), ChronoUnit.DAYS))
+                .build());
+        profileRepository.adjustCoinBalance(userId, whole);
+        return whole;
+    }
+
     // ── Nightly maintenance ──
 
     /** Confirm pending earnings whose return window has closed; they become spendable. Returns count confirmed. */

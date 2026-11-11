@@ -40,6 +40,10 @@ public class LoyaltyEventRule {
     @Builder.Default
     private boolean onceOnly = false;
 
+    /**
+     * When true, a non-PURCHASE occurrence also credits spendable reward coins equal to the points awarded
+     * (rounded down), immediately CONFIRMED. PURCHASE coins come from {@code CoinService.earnForOrder} instead.
+     */
     @Column(nullable = false)
     @Builder.Default
     private boolean earnsCoins = false;

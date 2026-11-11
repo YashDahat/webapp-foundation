@@ -18,5 +18,9 @@ public enum LoyaltyEventType {
     SHARE_CLICK,
     REFERRAL_SIGNUP,
     REFERRAL_PURCHASE,
-    NOTIF_OPT_IN
+    NOTIF_OPT_IN,
+    /** Post-order feedback (1–5 stars) submitted via the fenced FeedbackService — one per order. */
+    FEEDBACK,
+    /** A customer suggestion/idea submitted through a site feature; recorded server-side by that feature. */
+    SUGGESTION
 }

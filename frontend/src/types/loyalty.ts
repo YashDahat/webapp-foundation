@@ -6,7 +6,7 @@ export type Tier = 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
 export type LoyaltyEventType =
   | 'SIGNUP' | 'PROFILE_COMPLETE' | 'DAILY_VISIT' | 'PRODUCT_VIEW' | 'WISHLIST' | 'ADD_TO_CART'
   | 'PURCHASE' | 'REVIEW' | 'REVIEW_MEDIA' | 'SHARE_CLICK' | 'REFERRAL_SIGNUP' | 'REFERRAL_PURCHASE'
-  | 'NOTIF_OPT_IN';
+  | 'NOTIF_OPT_IN' | 'FEEDBACK' | 'SUGGESTION';
 
 export type OfferTrigger =
   | 'WELCOME' | 'ABANDONED_CART' | 'WIN_BACK' | 'TIER_UP' | 'MILESTONE' | 'BIRTHDAY' | 'SLOW_STOCK'

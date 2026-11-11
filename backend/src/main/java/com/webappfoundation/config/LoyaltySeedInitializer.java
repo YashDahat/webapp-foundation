@@ -86,6 +86,8 @@ public class LoyaltySeedInitializer implements CommandLineRunner {
         rule(LoyaltyEventType.REFERRAL_SIGNUP, "50", null, false, false);   // 20/month (monthly cap in engine)
         rule(LoyaltyEventType.REFERRAL_PURCHASE, "200", null, false, true);
         rule(LoyaltyEventType.NOTIF_OPT_IN, "25", null, true, false);
+        rule(LoyaltyEventType.FEEDBACK, "15", null, false, true);     // one per order (enforced by FeedbackService)
+        rule(LoyaltyEventType.SUGGESTION, "10", 1, false, true);      // capped at 1/day: farmable, so combined caps apply
     }
 
     private void rule(LoyaltyEventType type, String points, Integer perDayCap, boolean onceOnly, boolean earnsCoins) {
