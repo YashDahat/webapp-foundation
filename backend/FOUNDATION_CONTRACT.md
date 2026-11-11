@@ -69,7 +69,8 @@ Auth endpoints (already implemented — do not rebuild). `LoginResponse` is retu
 not verified, finish via /verify-signup. A 6-digit OTP is emailed for either challenge.
 
 **Auth hardening (enforced):** repeated failed logins lock the account out (429) via `LoginRateLimiter`;
-challenge / password-reset links are short-lived (`jwt.challenge-expiration-ms`, 15 min) and a reset
+Login (access) tokens last 7 days by default (`jwt.expiration-ms` / `JWT_EXPIRATION_MS`, 604800000), so users stay signed in across
+browser restarts. challenge / password-reset links are short-lived (`jwt.challenge-expiration-ms`, 15 min) and a reset
 link is **single-use** (it carries the user's `tokenVersion`, which is bumped on reset). Every access
 token embeds `tokenVersion`; a password change or reset bumps it and thereby **revokes all existing
 tokens** (so a password change logs the user out everywhere).
@@ -666,6 +667,7 @@ class OrderFeedback { Long id; Long orderId; Integer userId; int rating; String 
 class OrderFeedbackDto { Long id; Long orderId; String orderNumber; int rating; String comment; Instant createdAt; }
 class CreateFeedbackRequest { int rating; String comment; }    // rating 1–5; comment optional
 class FeedbackService { OrderFeedbackDto submit(Integer userId, Long orderId, CreateFeedbackRequest req); List<OrderFeedbackDto> all(); }
+// submit() also records a FEEDBACK loyalty event → score points + reward coins (see Discount & Loyalty).
 ```
 Endpoints: `POST /api/v1/orders/{id}/feedback` (auth, ownership, submit-once → 409 if already submitted); admin
 read-only `GET /api/v1/admin/feedback`. `OrderDto.feedbackSubmitted` tells the UI when to show the form.
@@ -708,7 +710,9 @@ seeded on startup by `LoyaltySeedInitializer` (no Flyway; `ddl-auto`).
 ```java
 enum Tier { BRONZE, SILVER, GOLD, PLATINUM }
 enum LoyaltyEventType { SIGNUP, PROFILE_COMPLETE, DAILY_VISIT, PRODUCT_VIEW, WISHLIST, ADD_TO_CART, PURCHASE,
-  REVIEW, REVIEW_MEDIA, SHARE_CLICK, REFERRAL_SIGNUP, REFERRAL_PURCHASE, NOTIF_OPT_IN }
+  REVIEW, REVIEW_MEDIA, SHARE_CLICK, REFERRAL_SIGNUP, REFERRAL_PURCHASE, NOTIF_OPT_IN, FEEDBACK, SUGGESTION }
+// FEEDBACK is recorded by the fenced FeedbackService on submit; SUGGESTION is recorded server-side by a site's own
+// suggestion/ideas feature: loyaltyEventService.record(userId, LoyaltyEventType.SUGGESTION, null, meta).
 enum LoyaltyEventStatus { PENDING, CONFIRMED, REVERSED }
 enum CoinStatus { PENDING, CONFIRMED, REVERSED, EXPIRED }
 enum OfferType { PCT, FLAT, FREE_SHIP, GIFT, COINS }
@@ -731,7 +735,8 @@ class Redemption { Long id; String code; Long orderId; Integer userId; BigDecima
 class DiscountBudget { Long id; String month /*yyyy-MM, unique*/; BigDecimal budgetAmount; BigDecimal spentToDate; }
 class LoyaltyTier { Long id; Tier tier /*unique*/; String name; Integer minScore; BigDecimal coinsPer100; String perks; }
 class LoyaltyEventRule { Long id; LoyaltyEventType eventType /*unique*/; BigDecimal points; Integer perDayCap;
-  boolean onceOnly; boolean earnsCoins; }
+  boolean onceOnly; boolean earnsCoins; }   // earnsCoins on a non-PURCHASE event → also credits coins = points awarded (CONFIRMED, spendable at once)
+// Seeded earnsCoins: REVIEW (20), REVIEW_MEDIA (35), REFERRAL_PURCHASE (200), FEEDBACK (15, one per order), SUGGESTION (10, 1/day).
 class LoyaltyTriggerConfig { Long id; OfferTrigger trigger /*unique*/; boolean enabled; String rungsJson; Integer expiryDays; }
 class LoyaltySettings { Long id /*=1*/; boolean discountsEnabled; BigDecimal coinValue; Integer maxCoinPctOfOrder;
   BigDecimal minOrderForCoins; Integer coinExpiryMonths; Integer scoreHalfLifeDays; Integer dailyCap; Integer monthlyCap;
@@ -752,6 +757,7 @@ class CoinService {
   BigDecimal spendable(Integer userId); List<CoinLedgerDto> history(Integer userId);
   BigDecimal earnForOrder(Integer userId, BigDecimal orderTotal, Long orderId);   // pending; floor(total/100 × tier.coinsPer100)
   BigDecimal redeemForOrder(Integer userId, BigDecimal rupeesOff, Long orderId);  // atomic, never overdraws
+  BigDecimal earnForAction(Integer userId, BigDecimal coins, String reason);    // engagement coins (CONFIRMED); called by LoyaltyEventService for earnsCoins rules
   void reverseForOrder(Long orderId); int confirmDueEarnings(); int expireDueCoins();
 }
 // Connectors (auto-bound into every workflow by LoyaltyWorkflowBindingInitializer; admin may re-order/disable at /admin/workflow):

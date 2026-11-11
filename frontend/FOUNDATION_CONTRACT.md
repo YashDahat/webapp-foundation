@@ -98,6 +98,7 @@ Gotchas (each was a real failure this run):
 - **Guest checkout = login-first, cart preserved.** Wrap any page that requires a logged-in user in the foundation `RequireAuth` component (`@/components/RequireAuth`): `<Route path="/checkout" element={<RequireAuth><CheckoutPage/></RequireAuth>} />`. A guest is sent to `/login?redirect=<path>` and returns to that page after logging in/signing up. The cart persists to localStorage, so nothing is lost across the round-trip — do not try to stash the cart yourself.
 - **Identity is server-derived — never send a user id/email from the client.** For "the current user's" data, the frontend sends only the payload (e.g. the cart); the backend resolves the user from the JWT and links rows by `Integer userId`. Don't put `userId`/`userEmail` in request bodies or paths, and don't read the user from `localStorage`/token — use `useAuth()`.
 - `<AuthProvider>` is already mounted at the app root — do not add another.
+- Sessions persist: the JWT lives in `localStorage` and is valid for 7 days (`JWT_EXPIRATION_MS`), so a user stays logged in across tabs and browser restarts. Do not shorten it or add your own session storage.
 
 ## Cart — `@/cart` (also re-exported from `@/context/CartContext`)
 
@@ -327,6 +328,10 @@ interface SiteFooterProps { brandName: string; tagline?: string | null; address?
 ```
 You must generate `src/config/siteConfig.ts` with `export const siteConfig: SiteConfig = { header, footer }`
 (named export — import it as `import { siteConfig } from '@/config/siteConfig'`).
+
+`SiteHeader` shows a back-office button automatically (no prop, no config): signed-in **ADMIN / SUPER_ADMIN** get
+"Admin dashboard" → `/admin`; **STAFF** get "Order board" → `/admin/orders`; customers and guests see nothing. Do
+not add your own admin link to `navLinks`.
 
 The header/footer colour props (`bgClass`/`textClass`/`hoverClass`/`accentClass`/`ctaClass`) default to
 semantic theme tokens (`bg-background` / `text-foreground` / `bg-card` / primary accent), so when omitted
@@ -606,6 +611,8 @@ count with consent — `PRODUCT_VIEW` (10s dwell) + `ADD_TO_CART` are already wi
 ```ts
 import { useLoyaltyMe, useSetTrackingConsent, useCoinHistory } from '@/hooks/loyaltyHooks';
 import type { LoyaltyMeDto, CoinLedgerDto, ActivityType, RecordActivityRequest } from '@/types/loyalty';
+// LoyaltyEventType includes 'FEEDBACK' and 'SUGGESTION'. Reviews, order feedback, suggestions and referral purchases
+// earn reward coins (spendable at checkout) as well as score points — all recorded server-side, never via the beacon.
 import { loyaltyService } from '@/services/loyaltyService';
 loyaltyService.recordActivity({ type: 'ADD_TO_CART', itemType: 'PRODUCT', itemId });   // silent beacon (bypasses apiClient toasts)
 import LoyaltyCard from '@/components/loyalty/LoyaltyCard';                              // account-page rewards panel + coin history (foundation-owned)

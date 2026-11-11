@@ -3,7 +3,7 @@
 // Business-specific values live in src/config/siteConfig.ts, which the LLM generates.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, ShoppingCart } from 'lucide-react';
+import { Menu, X, ShoppingCart, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/cart';
@@ -26,7 +26,7 @@ export default function SiteHeader({
   ctaClass = 'bg-primary text-primary-foreground hover:bg-primary/90',
 }: SiteHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, user } = useAuth();
   const { cartCount } = useCart();
   const navigate = useNavigate();
   const close = () => setMobileOpen(false);
@@ -48,6 +48,28 @@ export default function SiteHeader({
       </Button>
     </Link>
   );
+
+  // Back-office entry for signed-in staff: ADMIN / SUPER_ADMIN go to the admin dashboard; STAFF (order board
+  // only) go straight to the board. Customers never see it.
+  const role = isAuthenticated ? user?.role : undefined;
+  const adminLink =
+    role === 'ADMIN' || role === 'SUPER_ADMIN'
+      ? { href: '/admin', label: 'Admin dashboard' }
+      : role === 'STAFF'
+        ? { href: '/admin/orders', label: 'Order board' }
+        : null;
+  const adminButton = (fullWidth: boolean) =>
+    adminLink && (
+      <Link to={adminLink.href} onClick={close} className={fullWidth ? 'flex-1' : undefined} data-testid="admin-dashboard-link">
+        <Button
+          variant="outline"
+          className={`${fullWidth ? 'w-full ' : ''}gap-2 border-current ${textClass} ${hoverClass} transition-colors duration-200`}
+        >
+          <LayoutDashboard size={16} aria-hidden="true" />
+          {adminLink.label}
+        </Button>
+      </Link>
+    );
 
   const handleLogout = () => {
     logout();
@@ -102,6 +124,7 @@ export default function SiteHeader({
             </Link>
           )}
           {showCart && cartButton}
+          {adminButton(false)}
           {showAuth && (
             isAuthenticated ? (
               <Button
@@ -176,6 +199,9 @@ export default function SiteHeader({
                 {link.label}
               </Link>
             )
+          )}
+          {adminLink && (
+            <div className="flex items-center gap-3 pt-2 border-t border-border">{adminButton(true)}</div>
           )}
           <div className="flex items-center gap-3 pt-2 border-t border-border">
             {ctaButton && (
