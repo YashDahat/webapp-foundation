@@ -5,6 +5,16 @@ never create your own `User` / `Role` / `SecurityConfig` / `PasswordEncoder` / a
 The base package is renamed per project, so **reference every type by its simple name** — import
 resolution is automatic. Match every method signature and field exactly.
 
+**Your own repositories — one top-level interface per file (boot-critical).** Declare every Spring
+Data repository you add as a top-level `public interface <Entity>Repository extends
+JpaRepository<<Entity>, <IdType>>` in its own file `<Entity>Repository.java`, in your feature's
+package (e.g. `<base>.<feature>.MenuItemRepository`) — the same shape as the foundation's own
+repositories. **Never nest repository interfaces inside a holder class** (`final class FooRepos {
+interface BarRepo … }`): Spring Data does not scan nested interfaces, so none of them become beans —
+the code compiles cleanly, then the app dies at boot with "required a bean of type 'FooRepos$BarRepo'
+that could not be found". Do not work around it with `@EnableJpaRepositories` /
+`considerNestedRepositories` — the application class is fenced; split the interfaces into files.
+
 ---
 
 ## Auth & users
