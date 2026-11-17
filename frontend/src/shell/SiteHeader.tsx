@@ -78,8 +78,8 @@ export default function SiteHeader({
   };
 
   return (
-    <header className={`${bgClass} ${textClass} py-4 px-4 sticky top-0 z-50 border-b border-border shadow-md`}>
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <header className={`${bgClass} ${textClass} py-4 sticky top-0 z-50 border-b border-border shadow-md`}>
+      <div className="site-container flex items-center justify-between gap-4">
 
         {/* Brand */}
         <Link to="/" onClick={close} className="flex items-center gap-2 font-bold text-xl">
@@ -176,7 +176,7 @@ export default function SiteHeader({
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <nav className={`md:hidden mt-3 border-t border-border pt-4 flex flex-col gap-4 px-4`}>
+        <nav className={`md:hidden mt-3 border-t border-border pt-4 flex flex-col gap-4 site-container`}>
           {navLinks.map(link =>
             link.external ? (
               <a

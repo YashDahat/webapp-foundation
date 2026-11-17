@@ -17,7 +17,7 @@ export default function OrdersPage() {
   const { data: orders, isLoading } = useMyOrders();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-4 py-10">
+    <div className="page page--narrow space-y-4">
       <h1 className="text-2xl font-bold">My orders</h1>
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>

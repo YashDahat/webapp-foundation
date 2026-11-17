@@ -50,11 +50,11 @@ export default function EventDetailPage() {
   const navigate = useNavigate();
 
   if (isLoading) {
-    return <p className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground">Loading…</p>;
+    return <p className="page text-sm text-muted-foreground">Loading…</p>;
   }
   if (isError || !event) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10">
+      <div className="page">
         <p className="text-sm text-muted-foreground">Event not found.</p>
         <Button asChild variant="link" className="px-0"><Link to="/events">← Back to events</Link></Button>
       </div>
@@ -70,7 +70,7 @@ export default function EventDetailPage() {
     : (event.price === 0 ? 'FREE' : `₹${event.price}`);
 
   return (
-    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-0 px-0 md:grid-cols-[3fr_2fr]">
+    <div className="site-container grid grid-cols-1 gap-0 px-0 md:px-gutter md:grid-cols-[3fr_2fr]">
       {/* ── Left: event poster ── */}
       <div className="flex flex-col">
         <div className="flex items-center justify-between px-6 pt-6 text-xs font-bold uppercase tracking-widest text-muted-foreground">

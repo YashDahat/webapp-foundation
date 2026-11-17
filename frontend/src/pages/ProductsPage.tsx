@@ -53,7 +53,7 @@ export default function ProductsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-10">
+    <div className="page space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Products</h1>
         <Input
@@ -91,7 +91,7 @@ export default function ProductsPage() {
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">No products found.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 lg:gap-6">
           {visible.map((p) => {
             const hasVariants = p.variants.length > 0;
             const outOfStock = isOutOfStock(p);

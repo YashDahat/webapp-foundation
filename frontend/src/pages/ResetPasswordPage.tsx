@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+      <div className="flex page page--form flex-col justify-center">
         <Card>
           <CardHeader>
             <CardTitle>Invalid reset link</CardTitle>
@@ -52,7 +52,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+    <div className="flex page page--form flex-col justify-center">
       <Card data-testid="reset-card">
         <CardHeader>
           <CardTitle>Choose a new password</CardTitle>

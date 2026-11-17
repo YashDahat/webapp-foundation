@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 export default function NotFoundPage() {
   return (
     <div
-      className="mx-auto flex max-w-2xl flex-col items-center gap-6 px-4 py-24 text-center"
+      className="flex page page--text flex-col items-center gap-6 text-center"
       data-testid="not-found-page"
     >
       <p className="text-6xl font-bold text-primary" data-testid="not-found-code">

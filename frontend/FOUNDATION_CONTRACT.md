@@ -37,6 +37,28 @@ them and, where noted, add your business content on top.
 `CheckoutPage` is foundation-provided but **replaceable**: keep it as-is for a simple flow, or replace
 that one file with a richer checkout that still uses `useCart()`/`useCheckout()` (see Checkout section).
 
+## Layout & spacing — `src/index.css` tokens + page classes (FENCED)
+
+One layout system for every screen, from a 6" phone to a 50" TV. Header, footer, admin and every page share
+the same left/right gutters and max width, so edges line up everywhere. **Never** hand-roll page frames with
+`mx-auto max-w-* px-4 py-*`; use these classes (and change the tokens, not the pages, to retune):
+
+| Class | Use for | Width |
+|---|---|---|
+| `site-container` | any full-width band's inner wrapper (hero, section bands, header/footer already use it) | up to `--page-max` (105rem) + gutters |
+| `page` | the outer wrapper of a page (adds `--page-y` top/bottom padding) | same as `site-container` |
+| `page page--narrow` | task flows: cart, checkout, orders, account, booking forms | `--page-narrow` (64rem) |
+| `page page--text` | long reading: terms, policies, story text | `--page-text` (46rem) |
+| `page page--form` | one small form: login, signup, reset | `--page-form` (28rem) |
+| `section` | vertical rhythm between big home-page sections | `--section-y` padding |
+
+Tokens (in `:root`): `--page-gutter` (clamp 1rem–4rem), `--page-max`, `--page-narrow`, `--page-text`, `--page-form`,
+`--page-y`, `--section-y`. Tailwind exposes them as `max-w-page`, `max-w-page-narrow`, `max-w-page-text`,
+`max-w-page-form`, `px-gutter`, `py-page-y`, `py-section-y`. Full-bleed bands: put the background on a
+full-width element and a `site-container` inside it. Above 1600px wide the root font size scales from 16px to
+20px, so rem-based UI grows on TVs; card grids add columns at `2xl` (e.g. `2xl:grid-cols-5`) rather than
+growing cards. Never add horizontal page scroll.
+
 ## App shell — `src/App.tsx`, `src/AppRoutes.tsx`, `src/AppProviders.tsx` (FENCED — auto-derived)
 
 **Never write, edit, or plan `App.tsx`, `AppRoutes.tsx`, or `AppProviders.tsx`.** `App.tsx` is a frozen

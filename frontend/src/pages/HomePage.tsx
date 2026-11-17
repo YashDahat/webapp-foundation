@@ -13,7 +13,7 @@ export default function HomePage() {
   const { cartCount, addItem } = useCart();
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
+    <div className="page page--text space-y-6">
       {!isAuthenticated || !user ? (
         <Card data-testid="home-anon">
           <CardHeader>

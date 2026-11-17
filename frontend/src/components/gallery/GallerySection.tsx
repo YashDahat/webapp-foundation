@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 function ImageGrid({ items }: { items: GalleryItemDto[] }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" data-testid="gallery-grid">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 lg:gap-6" data-testid="gallery-grid">
       {items.map((item) => (
         <figure key={item.id} className="overflow-hidden rounded-lg border bg-card" data-testid="gallery-image">
           <img
@@ -35,7 +35,7 @@ export default function GallerySection({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 lg:gap-6">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="aspect-square w-full rounded-lg" />
         ))}

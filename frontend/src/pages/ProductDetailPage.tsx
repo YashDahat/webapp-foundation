@@ -45,11 +45,11 @@ export default function ProductDetailPage() {
   }, [productId]);
 
   if (isLoading) {
-    return <p className="mx-auto max-w-5xl px-4 py-10 text-sm text-muted-foreground">Loading…</p>;
+    return <p className="page text-sm text-muted-foreground">Loading…</p>;
   }
   if (isError || !product) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10">
+      <div className="page">
         <p className="text-sm text-muted-foreground">Product not found.</p>
         <Button asChild variant="link" className="px-0">
           <Link to="/products">← Back to products</Link>
@@ -105,7 +105,7 @@ export default function ProductDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 px-4 py-10">
+    <div className="page space-y-8">
       <div className="grid gap-8 md:grid-cols-2">
         {/* Gallery */}
         <div className="space-y-3">

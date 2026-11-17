@@ -4,6 +4,15 @@
 
 @layer base {
   :root {
+    /* ── Layout tokens (one system for every screen, 6" phone → 50" TV) ──
+       Change these, not per-page max-w/px classes. */
+    --page-gutter: clamp(1rem, 4vw, 4rem);      /* left/right breathing room */
+    --page-max: 105rem;                         /* widest content line (1680px at 16px) */
+    --page-narrow: 64rem;                       /* task flows: cart, checkout, orders, account */
+    --page-text: 46rem;                         /* long reading: terms, policies */
+    --page-form: 28rem;                         /* single small form: login, signup, reset */
+    --page-y: clamp(1.5rem, 4vw, 3.5rem);       /* top/bottom padding of a page */
+    --section-y: clamp(2.5rem, 7vw, 6rem);      /* space between big home-page sections */
     --background: 0 0% 100%;
     --foreground: 222.2 47.4% 11.2%;
     --card: 0 0% 100%;
@@ -51,4 +60,28 @@
 @layer base {
   * { @apply border-border; }
   body { @apply bg-background text-foreground; margin: 0; }
+}
+
+/* Large screens and TVs: scale the whole rem-based UI up gently so a 50" screen reads like a
+   laptop at distance (16px up to 1600px wide, then up to 20px). Phones stay at 16px. */
+@layer base {
+  @media (min-width: 1600px) {
+    html { font-size: clamp(16px, calc(0.25vw + 12px), 20px); }
+  }
+}
+
+/* Shared page frame. Header, footer and every page use the same gutters and max width so edges
+   line up on every screen. Use these instead of ad-hoc `mx-auto max-w-* px-4 py-*`. */
+@layer components {
+  .site-container {
+    width: 100%;
+    max-width: calc(var(--page-max) + 2 * var(--page-gutter));
+    margin-inline: auto;
+    padding-inline: var(--page-gutter);
+  }
+  .page { @apply site-container; padding-block: var(--page-y); }
+  .page--narrow { max-width: calc(var(--page-narrow) + 2 * var(--page-gutter)); }
+  .page--text { max-width: calc(var(--page-text) + 2 * var(--page-gutter)); }
+  .page--form { max-width: calc(var(--page-form) + 2 * var(--page-gutter)); }
+  .section { padding-block: var(--section-y); }
 }
