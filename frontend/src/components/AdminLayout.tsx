@@ -61,7 +61,7 @@ export default function AdminLayout() {
           <Button variant="outline" size="sm" onClick={onLogout} data-testid="admin-logout">Log out</Button>
         </div>
       </header>
-      <div className="mx-auto flex w-full min-h-0 max-w-[90rem] flex-1 gap-6 px-4 py-6">
+      <div className="site-container flex min-h-0 flex-1 gap-6 py-6">
         <aside className="w-48 shrink-0 space-y-1 overflow-y-auto">
           {nav.map(({ to, label, icon: Icon, testId }) => (
             <NavLink key={to} to={to} className={linkClass} data-testid={testId}>

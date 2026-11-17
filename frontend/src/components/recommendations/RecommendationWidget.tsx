@@ -64,7 +64,7 @@ export default function RecommendationWidget({
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-semibold">{title ?? DEFAULT_TITLE[type]}</h2>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 lg:gap-6">
         {items.map((item) => {
           const canAdd = type === 'CROSS_SELL' && item.cartable;
           return (

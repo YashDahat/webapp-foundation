@@ -77,7 +77,7 @@ export default function LoginPage() {
 
   if (challengeId) {
     return (
-      <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+      <div className="flex page page--form flex-col justify-center">
         <Card data-testid="login-2fa-card">
           <CardHeader>
             <CardTitle>{challengeKind === 'verify' ? 'Verify your email' : 'Enter your code'}</CardTitle>
@@ -111,7 +111,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+    <div className="flex page page--form flex-col justify-center">
       <Card data-testid="login-card">
         <CardHeader>
           <CardTitle>Welcome back</CardTitle>

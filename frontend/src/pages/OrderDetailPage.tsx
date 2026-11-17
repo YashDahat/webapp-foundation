@@ -29,11 +29,11 @@ export default function OrderDetailPage() {
   const [reason, setReason] = useState('');
 
   if (isLoading) {
-    return <p className="mx-auto max-w-3xl px-4 py-10 text-sm text-muted-foreground">Loading…</p>;
+    return <p className="page page--narrow text-sm text-muted-foreground">Loading…</p>;
   }
   if (isError || !order) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
+      <div className="page page--narrow">
         <p className="text-sm text-muted-foreground">Order not found.</p>
         <Button asChild variant="link" className="px-0"><Link to="/orders">← Back to orders</Link></Button>
       </div>
@@ -45,7 +45,7 @@ export default function OrderDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-10">
+    <div className="page page--narrow space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <Button asChild variant="link" className="px-0 text-muted-foreground"><Link to="/orders">← My orders</Link></Button>

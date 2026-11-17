@@ -21,7 +21,7 @@ export default function SupportPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="page">
       <h1 className="mb-6 text-2xl font-bold">Support</h1>
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="space-y-6">

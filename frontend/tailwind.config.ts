@@ -18,6 +18,17 @@ const config: Config = {
         popover: { DEFAULT: "hsl(var(--popover))", foreground: "hsl(var(--popover-foreground))" },
         card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
       },
+      maxWidth: {
+        page: "var(--page-max)",
+        "page-narrow": "var(--page-narrow)",
+        "page-text": "var(--page-text)",
+        "page-form": "var(--page-form)",
+      },
+      spacing: {
+        gutter: "var(--page-gutter)",
+        "page-y": "var(--page-y)",
+        "section-y": "var(--section-y)",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

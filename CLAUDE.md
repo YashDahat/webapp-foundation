@@ -86,6 +86,10 @@ cards). Generated code inherits them; do not reinvent or bypass:
   field with a red border (`border-destructive focus-visible:ring-destructive`). Do **not** put messages
   below individual fields — it shifts the layout and breaks row alignment. Keep server-side checks as the
   backstop for data-integrity/security rules.
+- **Layout uses the shared page frame.** Wrap every page in `page` (+ `page--narrow` / `page--text` /
+  `page--form` where it fits) and every full-width band's content in `site-container`, so gutters and max width
+  match the header and footer on every screen (phone to TV). Never hand-roll `mx-auto max-w-* px-4 py-*` frames;
+  retune the tokens in `index.css` instead. See "Layout & spacing" in the frontend card.
 - **Admin tables use `AdminDataGrid` (ag-grid), admin-only.** All `/admin/**` data tables render via the
   shared `AdminDataGrid`; public pages keep shadcn `Table`/native — do NOT use ag-grid on public pages.
 - **Bulk upload is compulsory on admin entity tables.** Every admin entity list page ships a

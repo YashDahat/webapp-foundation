@@ -5,7 +5,7 @@
  */
 export default function LoyaltyTermsPage() {
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+    <div className="page page--text space-y-6">
       <h1 className="text-2xl font-bold">Rewards programme terms</h1>
 
       <section className="space-y-2">

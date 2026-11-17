@@ -79,7 +79,7 @@ export default function SignupPage() {
 
   if (challengeId) {
     return (
-      <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+      <div className="flex page page--form flex-col justify-center">
         <Card data-testid="signup-verify-card">
           <CardHeader>
             <CardTitle>Verify your email</CardTitle>
@@ -106,7 +106,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+    <div className="flex page page--form flex-col justify-center">
       <Card data-testid="signup-card">
         <CardHeader>
           <CardTitle>Create your account</CardTitle>

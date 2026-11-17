@@ -20,14 +20,14 @@ export default function BranchesPage() {
   const { branches, selectedBranchId, selectBranch, loading } = useBranch();
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-10">
+    <div className="page space-y-6">
       <h1 className="text-2xl font-bold">Our outlets</h1>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : branches.length === 0 ? (
         <p className="text-sm text-muted-foreground">No outlets available yet.</p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 lg:gap-6">
           {branches.map((b) => {
             const selected = b.id === selectedBranchId;
             return (

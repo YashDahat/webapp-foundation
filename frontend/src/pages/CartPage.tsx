@@ -9,7 +9,7 @@ export default function CartPage() {
   const { cartItems, totals, removeItem, clearCart } = useCart();
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
+    <div className="page page--narrow">
       <Card data-testid="cart-page">
         <CardHeader>
           <CardTitle>Your cart</CardTitle>

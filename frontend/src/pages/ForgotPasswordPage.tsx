@@ -28,7 +28,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-md flex-col justify-center px-4 py-12">
+    <div className="flex page page--form flex-col justify-center">
       <Card data-testid="forgot-card">
         <CardHeader>
           <CardTitle>Reset your password</CardTitle>
